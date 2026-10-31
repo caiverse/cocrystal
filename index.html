@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>你的名字 | 个人主页</title>
+<style>
+  :root{
+    --bg:#f7f8fa; --card:#ffffff; --text:#1f2329; --muted:#6b7280;
+    --accent:#2f6fed; --accent2:#7c3aed; --border:#e5e7eb;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--text);line-height:1.7;-webkit-font-smoothing:antialiased}
+  .hero{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;padding:80px 20px;text-align:center}
+  .hero h1{font-size:2.4rem;font-weight:700;margin-bottom:12px}
+  .hero p{font-size:1.1rem;opacity:.95;max-width:640px;margin:0 auto}
+  .avatar{width:96px;height:96px;border-radius:50%;background:rgba(255,255,255,.25);
+    margin:0 auto 20px;display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:700}
+  .container{max-width:860px;margin:0 auto;padding:40px 20px}
+  section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;margin-bottom:22px}
+  h2{font-size:1.3rem;margin-bottom:14px;color:var(--text)}
+  p{color:var(--muted);margin-bottom:10px}
+  .links{display:flex;flex-wrap:wrap;gap:12px}
+  .links a{display:inline-block;padding:10px 18px;background:var(--bg);border:1px solid var(--border);
+    border-radius:999px;text-decoration:none;color:var(--text);font-weight:500;transition:.2s}
+  .links a:hover{border-color:var(--accent);color:var(--accent)}
+  footer{text-align:center;color:var(--muted);font-size:.9rem;padding:30px 20px}
+  @media(max-width:600px){.hero{padding:56px 16px}.hero h1{font-size:1.8rem}}
+</style>
+</head>
+<body>
+<!--
+  ============================================================
+  如何修改这个页面：
+  1. 把「你的名字」「一句话简介」「关于我」等文字替换成你自己的内容。
+  2. 在 .links 里增删你的链接（GitHub / 邮箱 / 博客 等）。
+  3. 保存为 index.html（同一份文件即可）。
+  ------------------------------------------------------------
+  如何部署到 GitHub Pages（让 cocrystal.cn 打开它，免备案 / 免服务器）：
+  1. 注册 GitHub 账号，新建仓库（建议仓库名用 用户名.github.io）。
+  2. 把本文件上传到仓库根目录（网页拖拽即可，无需 Git）。
+  3. 仓库 Settings → Pages → Source 选 main 分支 / root，Save。
+  4. 得到 用户名.github.io 后，Settings → Pages → Custom domain 填 cocrystal.cn，Save。
+  5. 按 GitHub 提示，在阿里云 DNS 加一条 TXT 验证记录（值用 GitHub 给的那串）。
+  6. 阿里云 DNS 加解析（即之前截图里的「添加记录」弹窗）：
+       @    A      185.199.108.153 / 109 / 110 / 111.153 （共 4 条 @ 记录）
+       www  CNAME  用户名.github.io
+  7. 等 10–30 分钟，浏览器开 https://cocrystal.cn 即可（HTTPS 由 GitHub 自动签发）。
+  ============================================================
+-->
+<header class="hero">
+  <div class="avatar">Y</div>
+  <h1>你的名字</h1>
+  <p>一句话简介：比如「高分子材料研究者 · 个人主页」</p>
+</header>
+<main class="container">
+  <section>
+    <h2>关于我</h2>
+    <p>在这里写一段关于你的介绍。可以介绍你的专业方向、兴趣爱好、正在做的事情。</p>
+    <p>这一段也可以删掉或替换成你想展示的任何内容。</p>
+  </section>
+  <section>
+    <h2>链接</h2>
+    <div class="links">
+      <a href="https://github.com/" target="_blank" rel="noopener">GitHub</a>
+      <a href="mailto:you@example.com">邮箱</a>
+      <a href="#" target="_blank" rel="noopener">博客</a>
+    </div>
+  </section>
+  <section>
+    <h2>联系我</h2>
+    <p>想合作或交流，欢迎通过上面的邮箱或 GitHub 联系我。</p>
+  </section>
+</main>
+<footer>© <span id="year"></span> 你的名字 · Powered by cocrystal.cn</footer>
+<script>document.getElementById('year').textContent=new Date().getFullYear();</script>
+</body>
+</html>
