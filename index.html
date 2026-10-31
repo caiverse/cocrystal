@@ -3,77 +3,256 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>你的名字 | 个人主页</title>
+<title>长沙共晶科技有限公司 | 新型晶态功能材料与药物晶体/共晶研发</title>
 <style>
   :root{
-    --bg:#f7f8fa; --card:#ffffff; --text:#1f2329; --muted:#6b7280;
-    --accent:#2f6fed; --accent2:#7c3aed; --border:#e5e7eb;
+    --bg:#f5f7fa; --card:#ffffff; --text:#1f2329; --muted:#5b6472;
+    --accent:#1565c0; --accent2:#00897b; --border:#e3e8ef;
   }
   *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
     background:var(--bg);color:var(--text);line-height:1.7;-webkit-font-smoothing:antialiased}
-  .hero{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;padding:80px 20px;text-align:center}
-  .hero h1{font-size:2.4rem;font-weight:700;margin-bottom:12px}
-  .hero p{font-size:1.1rem;opacity:.95;max-width:640px;margin:0 auto}
-  .avatar{width:96px;height:96px;border-radius:50%;background:rgba(255,255,255,.25);
-    margin:0 auto 20px;display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:700}
-  .container{max-width:860px;margin:0 auto;padding:40px 20px}
-  section{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;margin-bottom:22px}
-  h2{font-size:1.3rem;margin-bottom:14px;color:var(--text)}
-  p{color:var(--muted);margin-bottom:10px}
-  .links{display:flex;flex-wrap:wrap;gap:12px}
-  .links a{display:inline-block;padding:10px 18px;background:var(--bg);border:1px solid var(--border);
-    border-radius:999px;text-decoration:none;color:var(--text);font-weight:500;transition:.2s}
-  .links a:hover{border-color:var(--accent);color:var(--accent)}
-  footer{text-align:center;color:var(--muted);font-size:.9rem;padding:30px 20px}
-  @media(max-width:600px){.hero{padding:56px 16px}.hero h1{font-size:1.8rem}}
+  .topbar{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border)}
+  .nav{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:14px 20px;position:relative}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--text);font-size:1.05rem;text-decoration:none}
+  .brand .mark{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+  .menu{display:flex;gap:22px}
+  .menu a{color:var(--muted);text-decoration:none;font-size:.95rem}
+  .menu a:hover{color:var(--accent)}
+  .hamburger{display:none;background:none;border:none;font-size:1.5rem;color:var(--text);cursor:pointer}
+  .hero{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;padding:92px 20px;text-align:center}
+  .hero h1{font-size:2.6rem;font-weight:700;letter-spacing:2px;margin-bottom:14px}
+  .hero .sub{font-size:1.18rem;opacity:.96;max-width:820px;margin:0 auto;font-weight:400}
+  .hero .tagline{font-size:.98rem;opacity:.85;margin:14px auto 26px;max-width:680px}
+  .cta{display:inline-block;padding:12px 26px;background:#fff;color:var(--accent);border-radius:999px;
+    text-decoration:none;font-weight:600;transition:.2s}
+  .cta:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.15)}
+  .container{max-width:980px;margin:0 auto;padding:48px 20px}
+  section{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px;margin-bottom:24px;scroll-margin-top:72px}
+  h2{font-size:1.42rem;margin-bottom:18px;color:var(--text);position:relative;padding-left:14px}
+  h2::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:4px;border-radius:2px;background:var(--accent)}
+  p{color:var(--muted);margin-bottom:12px}
+  #about p{text-align:justify;text-justify:inter-character}
+  .tags{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px}
+  .tags span{display:flex;align-items:center;justify-content:center;min-height:46px;padding:9px 15px;background:var(--bg);border:1px solid var(--border);
+    border-radius:10px;font-size:.92rem;color:var(--text);text-align:center}
+  #business p{text-align:center}
+  .note{font-size:.88rem;color:#9aa3ad}
+  .psearch{margin:6px 0 16px}
+  .psearch input{width:100%;padding:12px 16px;border:1px solid var(--border);border-radius:12px;font-size:1rem;outline:none}
+  .psearch input:focus{border-color:var(--accent)}
+  .pcats{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+  .catbtn{padding:7px 16px;border:1px solid var(--border);background:var(--bg);border-radius:999px;
+    font-size:.9rem;color:var(--muted);cursor:pointer;transition:.2s}
+  .catbtn.active,.catbtn:hover{border-color:var(--accent);color:var(--accent);background:#fff}
+  .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+  .pcard{background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:20px;transition:.2s;display:flex;flex-direction:column}
+  .pcard:hover{border-color:var(--accent);transform:translateY(-3px)}
+  .phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .ptag{display:inline-block;font-size:.78rem;color:var(--accent2);background:#e6f4f1;padding:3px 10px;border-radius:999px}
+  .pcode{font-size:.8rem;color:#9aa3ad;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .pcard h3{font-size:1.05rem;margin-bottom:8px;text-align:center}
+  .pcard p{font-size:.9rem;margin:0;flex:1;text-align:justify;text-justify:inter-character}
+  .pinq{display:inline-block;align-self:flex-start;margin-top:14px;padding:7px 16px;background:var(--accent);color:#fff;
+    border-radius:999px;font-size:.85rem;text-decoration:none;font-weight:500}
+  .pinq:hover{opacity:.9}
+  .contact{display:flex;flex-wrap:wrap;gap:14px}
+  .contact a,.contact .phone{display:inline-flex;align-items:center;gap:8px;padding:12px 20px;background:var(--bg);
+    border:1px solid var(--border);border-radius:12px;text-decoration:none;color:var(--text);font-weight:500;transition:.2s}
+  .contact a:hover{border-color:var(--accent);color:var(--accent)}
+  footer{text-align:center;color:var(--muted);font-size:.9rem;padding:34px 20px}
+  @media(max-width:640px){
+    .hero{padding:60px 16px}.hero h1{font-size:1.9rem}.container{padding:32px 16px}
+    .hamburger{display:block}
+    .menu{display:none;position:absolute;top:100%;right:0;background:#fff;border:1px solid var(--border);
+      border-radius:0 0 12px 12px;flex-direction:column;gap:0;min-width:170px;padding:6px 0}
+    .menu.open{display:flex}
+    .menu a{padding:11px 20px}
+  }
 </style>
 </head>
 <body>
 <!--
   ============================================================
-  如何修改这个页面：
-  1. 把「你的名字」「一句话简介」「关于我」等文字替换成你自己的内容。
-  2. 在 .links 里增删你的链接（GitHub / 邮箱 / 博客 等）。
-  3. 保存为 index.html（同一份文件即可）。
-  ------------------------------------------------------------
   如何部署到 GitHub Pages（让 cocrystal.cn 打开它，免备案 / 免服务器）：
-  1. 注册 GitHub 账号，新建仓库（建议仓库名用 用户名.github.io）。
-  2. 把本文件上传到仓库根目录（网页拖拽即可，无需 Git）。
-  3. 仓库 Settings → Pages → Source 选 main 分支 / root，Save。
-  4. 得到 用户名.github.io 后，Settings → Pages → Custom domain 填 cocrystal.cn，Save。
-  5. 按 GitHub 提示，在阿里云 DNS 加一条 TXT 验证记录（值用 GitHub 给的那串）。
-  6. 阿里云 DNS 加解析（即之前截图里的「添加记录」弹窗）：
-       @    A      185.199.108.153 / 109 / 110 / 111.153 （共 4 条 @ 记录）
+  1. 注册 GitHub 账号，新建仓库（建议仓库名用 用户名.github.io），把本文件传到仓库根目录。
+  2. 仓库 Settings → Pages → Source 选 main 分支 / root，Save，得到 用户名.github.io。
+  3.【推荐·防盗用】账号级验证：点右上角头像 → Settings → 左侧 Pages → “Verified domains” 点 Add a domain，
+     填 cocrystal.cn；GitHub 会显示一条 TXT（主机 _github-pages-challenge-用户名，值是它给的验证码）。
+     去阿里云 DNS 加这条 TXT，等生效后回 GitHub 点 Verify。
+  4. 仓库 Settings → Pages → Custom domain 填 cocrystal.cn，Save（GitHub 会做 DNS 检查，需第 5 步的 A/CNAME 已生效）。
+  5. 阿里云 DNS 加解析（即「添加记录」弹窗）：
+       @    A      185.199.108.153 / 109 / 110 / 111.153 （共 4 条）
        www  CNAME  用户名.github.io
-  7. 等 10–30 分钟，浏览器开 https://cocrystal.cn 即可（HTTPS 由 GitHub 自动签发）。
+  6. DNS 检查通过后勾选 Enforce HTTPS（证书签发最多等 24h），浏览器开 https://cocrystal.cn 即可。
+  注：第 3 步 TXT 验证是“防别人抢注你的域名”，不做站点也能打开；真正让站点加载的是第 4–5 步的 A/CNAME。
+  产品展示区搜索/筛选为纯前端 JS，无需后端；编号规则 CC + 三位序号（CC-001 起）。
   ============================================================
 -->
-<header class="hero">
-  <div class="avatar">Y</div>
-  <h1>你的名字</h1>
-  <p>一句话简介：比如「高分子材料研究者 · 个人主页」</p>
+<header class="topbar">
+  <nav class="nav">
+    <a class="brand" href="#top"><span class="mark"></span>长沙共晶科技</a>
+    <button class="hamburger" id="hburger" aria-label="菜单">☰</button>
+    <div class="menu" id="menu">
+      <a href="#products">产品展示</a>
+      <a href="#about">关于我们</a>
+      <a href="#business">产品与业务</a>
+      <a href="#contact">联系方式</a>
+    </div>
+  </nav>
+</header>
+<header class="hero" id="top">
+  <h1>长沙共晶科技有限公司</h1>
+  <p class="sub">致力于新型晶态功能材料与药物晶体/共晶的设计与研发</p>
+  <p class="tagline">分子设计 · 晶体工程 · 工艺放大 ｜ 一站式晶态功能材料与药物共晶研发定制解决方案</p>
+  <a class="cta" href="#products">浏览产品展示 ↓</a>
 </header>
 <main class="container">
-  <section>
-    <h2>关于我</h2>
-    <p>在这里写一段关于你的介绍。可以介绍你的专业方向、兴趣爱好、正在做的事情。</p>
-    <p>这一段也可以删掉或替换成你想展示的任何内容。</p>
+  <section id="products">
+    <h2>产品展示</h2>
+    <p class="note">产品编号规则：CC（CoCrystal）＋ 三位序号（CC-001 起）。可用搜索框按编号 / 名称 / 分类 / 关键词检索，或点分类筛选。</p>
+    <div class="psearch">
+      <input id="search" type="search" placeholder="搜索编号、产品名称、分类或关键词…" aria-label="搜索产品">
+    </div>
+    <div class="pcats" id="pcats">
+      <button class="catbtn active" data-cat="全部">全部</button>
+      <button class="catbtn" data-cat="晶体生长">晶体生长</button>
+      <button class="catbtn" data-cat="药物共晶">药物共晶</button>
+      <button class="catbtn" data-cat="功能材料">功能材料</button>
+      <button class="catbtn" data-cat="陶瓷材料">陶瓷材料</button>
+      <button class="catbtn" data-cat="电子材料">电子材料</button>
+      <button class="catbtn" data-cat="金属/合金材料">金属/合金材料</button>
+      <button class="catbtn" data-cat="技术服务">技术服务</button>
+    </div>
+    <div class="pgrid" id="pgrid">
+      <div class="pcard" data-cat="晶体生长" data-text="cc-001 晶体生长 单晶 设计 培养 生长 晶体 工艺 质量控制 单晶生长">
+        <div class="phead"><span class="ptag">晶体生长</span><span class="pcode">CC-001</span></div>
+        <h3>单晶设计、培养与生长</h3>
+        <p>提供单晶的设计、培养与生长服务，涵盖晶体生长工艺开发与质量控制。</p>
+        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-001 单晶设计、培养与生长">咨询</a>
+      </div>
+      <div class="pcard" data-cat="药物共晶" data-text="cc-002 药物共晶 难溶性药物 共晶 盐型 多晶型 固体形态 筛选 晶型 溶解度 api 制剂">
+        <div class="phead"><span class="ptag">药物共晶</span><span class="pcode">CC-002</span></div>
+        <h3>难溶性药物共晶/盐型筛选</h3>
+        <p>面向难溶性药物的共晶、盐型及多晶型筛选与固体形态研究。</p>
+        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-002 难溶性药物共晶/盐型筛选">咨询</a>
+      </div>
+      <div class="pcard" data-cat="技术服务" data-text="cc-003 技术服务 表征 晶体工程 外包 联合研发 咨询 测试 委托">
+        <div class="phead"><span class="ptag">技术服务</span><span class="pcode">CC-003</span></div>
+        <h3>材料表征与晶体工程外包</h3>
+        <p>提供材料表征、晶体工程与工艺开发的外包与联合研发服务。</p>
+        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-003 材料表征与晶体工程外包">咨询</a>
+      </div>
+      <div class="pcard" data-cat="药物共晶" data-text="cc-004 药物共晶 多晶型 晶体质量 表征 调控 工艺 晶型 稳定性 批次一致性 pxrd">
+        <div class="phead"><span class="ptag">药物共晶</span><span class="pcode">CC-004</span></div>
+        <h3>多晶型鉴定与晶体质量调控</h3>
+        <p>提供晶体表征、多晶型鉴定与工艺优化服务，提升晶型稳定性与批次一致性。</p>
+        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-004 多晶型鉴定与晶体质量调控">咨询</a>
+      </div>
+      <div class="pcard" data-cat="功能材料" data-text="cc-005 功能材料 催化 吸附 高分子 复合 环境 能源 催化剂 分离">
+        <div class="phead"><span class="ptag">功能材料</span><span class="pcode">CC-005</span></div>
+        <h3>新型催化/吸附功能材料</h3>
+        <p>面向环境与能源场景的催化、吸附类功能材料设计与制备。</p>
+        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-005 新型催化/吸附功能材料">咨询</a>
+      </div>
+      <div class="pcard" data-cat="陶瓷材料" data-text="cc-006 陶瓷材料 高纯 前驱体 粉体 电子 结构 氧化铝 氮化铝 烧结">
+        <div class="phead"><span class="ptag">陶瓷材料</span><span class="pcode">CC-006</span></div>
+        <h3>高纯功能陶瓷前驱体粉体</h3>
+        <p>面向电子与结构应用的高纯陶瓷粉体，可控粒径与纯度。</p>
+        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-006 高纯功能陶瓷前驱体粉体">咨询</a>
+      </div>
+      <div class="pcard" data-cat="电子材料" data-text="cc-007 电子材料 封装 半导体 导热 可靠连接 环氧 基板 集成电路">
+        <div class="phead"><span class="ptag">电子材料</span><span class="pcode">CC-007</span></div>
+        <h3>电子专用封装材料</h3>
+        <p>半导体封装用专用电子材料，关注热管理与可靠连接。</p>
+        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-007 电子专用封装材料">咨询</a>
+      </div>
+      <div class="pcard" data-cat="金属/合金材料" data-text="cc-008 金属 合金 高性能铝 有色金属 轻量化 型材 导热 结构 铝合金">
+        <div class="phead"><span class="ptag">金属/合金材料</span><span class="pcode">CC-008</span></div>
+        <h3>高性能铝合金型材</h3>
+        <p>轻量化、高强度有色金属及合金材料，面向结构与导热场景。</p>
+        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-008 高性能铝合金型材">咨询</a>
+      </div>
+      <div class="pcard" data-cat="技术服务" data-text="cc-009 技术服务 开发 咨询 交流 转让 推广 技术 服务 委托 研发 合作">
+        <div class="phead"><span class="ptag">技术服务</span><span class="pcode">CC-009</span></div>
+        <h3>技术服务（开发·咨询·交流·转让·推广）</h3>
+        <p>提供技术开发、技术咨询、技术交流、技术转让、技术推广等一体化技术服务。</p>
+        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-009 技术服务（开发·咨询·交流·转让·推广）">咨询</a>
+      </div>
+    </div>
+    <p id="noresult" class="note" style="display:none;margin-top:14px">未找到匹配的产品，请调整关键词或切换分类。</p>
   </section>
-  <section>
-    <h2>链接</h2>
-    <div class="links">
-      <a href="https://github.com/" target="_blank" rel="noopener">GitHub</a>
-      <a href="mailto:you@example.com">邮箱</a>
-      <a href="#" target="_blank" rel="noopener">博客</a>
+  <section id="about">
+    <h2>关于我们</h2>
+    <p>长沙共晶科技有限公司是一家聚焦于新型晶态功能材料与药物晶体/共晶领域的技术型企业，致力于新型晶态功能材料与药物共晶、盐型及多晶型的设计、筛选与工艺开发。</p>
+    <p>公司立足材料科学与制药工程的交叉前沿，搭建从分子设计、晶体工程到工艺放大的全链条研发能力，为多行业客户提供固体形态研究、晶体质量调控及定制化材料解决方案。</p>
+    <p>凭借在共晶技术、晶体表征与工艺优化方面的持续积累，我们坚持以客户需求为导向，推动实验室成果向稳定、可放大的产业应用转化。</p>
+  </section>
+  <section id="business">
+    <h2>产品与业务</h2>
+    <p>公司经营范围涵盖新材料研发、专用材料销售及技术服务于一体，主要包括：</p>
+    <div class="tags">
+      <span>工程和技术研究和试验发展</span>
+      <span>新材料技术研发</span>
+      <span>电子专用材料研发</span>
+      <span>技术服务（开发·咨询·交流·转让·推广）</span>
+      <span>新型陶瓷材料销售</span>
+      <span>翻译服务</span>
+      <span>半导体器件专用设备销售</span>
+      <span>高性能有色金属及合金材料销售</span>
+      <span>金属材料销售</span>
+      <span>建筑材料销售</span>
+      <span>仪器仪表销售</span>
+      <span>摄像及视频制作服务</span>
+      <span>机械设备销售</span>
+      <span>专用化学产品销售（不含危险化学品）</span>
+      <span>化工产品销售（不含许可类化工产品）</span>
     </div>
   </section>
-  <section>
-    <h2>联系我</h2>
-    <p>想合作或交流，欢迎通过上面的邮箱或 GitHub 联系我。</p>
+  <section id="contact">
+    <h2>联系方式</h2>
+    <div class="contact">
+      <a href="mailto:caib@cocrystal.cn">✉ 邮箱：caib@cocrystal.cn</a>
+      <a href="https://github.com/caiverse" target="_blank" rel="noopener">GitHub</a>
+      <span class="phone">☎ 电话：13243630246</span>
+      <span class="phone">☎ 电话：17700594433</span>
+    </div>
+    <p style="margin-top:16px">欢迎通过邮箱或电话与我们联系，洽谈合作与技术交流。</p>
   </section>
 </main>
-<footer>© <span id="year"></span> 你的名字 · Powered by cocrystal.cn</footer>
-<script>document.getElementById('year').textContent=new Date().getFullYear();</script>
+<footer>© <span id="year"></span> 长沙共晶科技有限公司 · Powered by cocrystal.cn</footer>
+<script>
+  document.getElementById('year').textContent=new Date().getFullYear();
+  // 移动端汉堡菜单
+  var burger=document.getElementById('hburger'),menu=document.getElementById('menu');
+  burger.addEventListener('click',function(){menu.classList.toggle('open');});
+  menu.querySelectorAll('a').forEach(function(a){a.addEventListener('click',function(){menu.classList.remove('open');});});
+  // 产品搜索 + 分类筛选（纯前端）
+  var cards=Array.prototype.slice.call(document.querySelectorAll('.pcard'));
+  var q=document.getElementById('search'),catBtns=document.querySelectorAll('.catbtn');
+  var curCat='全部';
+  function apply(){
+    var kw=q.value.trim().toLowerCase();
+    var shown=0;
+    cards.forEach(function(c){
+      var text=c.getAttribute('data-text');
+      var okCat=(curCat==='全部')||(c.getAttribute('data-cat')===curCat);
+      var okKw=!kw||text.indexOf(kw)>-1;
+      var ok=(okCat&&okKw);
+      c.style.display=ok?'':'none';
+      if(ok) shown++;
+    });
+    document.getElementById('noresult').style.display = shown? 'none':'block';
+  }
+  q.addEventListener('input',apply);
+  catBtns.forEach(function(b){b.addEventListener('click',function(){
+    curCat=b.getAttribute('data-cat');
+    catBtns.forEach(function(x){x.classList.remove('active');});
+    b.classList.add('active');apply();
+  });});
+  apply();
+</script>
 </body>
 </html>
