@@ -63,6 +63,7 @@
     border:1px solid var(--border);border-radius:12px;text-decoration:none;color:var(--text);font-weight:500;transition:.2s}
   .contact a:hover{border-color:var(--accent);color:var(--accent)}
   footer{text-align:center;color:var(--muted);font-size:.9rem;padding:34px 20px}
+  .searchframe{width:100%;height:82vh;min-height:520px;border:1px solid var(--border);border-radius:14px;background:#fff}
   @media(max-width:640px){
     .hero{padding:60px 16px}.hero h1{font-size:1.9rem}.container{padding:32px 16px}
     .hamburger{display:block}
@@ -88,7 +89,12 @@
        www  CNAME  用户名.github.io
   6. DNS 检查通过后勾选 Enforce HTTPS（证书签发最多等 24h），浏览器开 https://cocrystal.cn 即可。
   注：第 3 步 TXT 验证是“防别人抢注你的域名”，不做站点也能打开；真正让站点加载的是第 4–5 步的 A/CNAME。
-  产品展示区搜索/筛选为纯前端 JS，无需后端；编号规则 CC + 三位序号（CC-001 起）。
+
+  【产品数据驱动说明】
+  产品展示区从 products.json 读取数据并动态渲染（搜索 / 分类筛选为纯前端 JS，无需后端）。
+  以后维护产品：编辑仓库根目录的 products.json（或让助手从产物库重新导出生成）后部署即可，不用改本文件。
+  每条产品字段：code(编号) / name(名称) / cat(分类) / desc(简介) / kw(搜索关键词)。
+  若 products.json 未随站部署，页面会用内置兜底数据渲染，不会出现空白。
   ============================================================
 -->
 <header class="topbar">
@@ -99,6 +105,7 @@
       <a href="#products">产品展示</a>
       <a href="#about">关于我们</a>
       <a href="#business">产品与业务</a>
+      <a href="#search">产物库检索</a>
       <a href="#contact">联系方式</a>
     </div>
   </nav>
@@ -116,72 +123,8 @@
     <div class="psearch">
       <input id="search" type="search" placeholder="搜索编号、产品名称、分类或关键词…" aria-label="搜索产品">
     </div>
-    <div class="pcats" id="pcats">
-      <button class="catbtn active" data-cat="全部">全部</button>
-      <button class="catbtn" data-cat="晶体生长">晶体生长</button>
-      <button class="catbtn" data-cat="药物共晶">药物共晶</button>
-      <button class="catbtn" data-cat="功能材料">功能材料</button>
-      <button class="catbtn" data-cat="陶瓷材料">陶瓷材料</button>
-      <button class="catbtn" data-cat="电子材料">电子材料</button>
-      <button class="catbtn" data-cat="金属/合金材料">金属/合金材料</button>
-      <button class="catbtn" data-cat="技术服务">技术服务</button>
-    </div>
-    <div class="pgrid" id="pgrid">
-      <div class="pcard" data-cat="晶体生长" data-text="cc-001 晶体生长 单晶 设计 培养 生长 晶体 工艺 质量控制 单晶生长">
-        <div class="phead"><span class="ptag">晶体生长</span><span class="pcode">CC-001</span></div>
-        <h3>单晶设计、培养与生长</h3>
-        <p>提供单晶的设计、培养与生长服务，涵盖晶体生长工艺开发与质量控制。</p>
-        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-001 单晶设计、培养与生长">咨询</a>
-      </div>
-      <div class="pcard" data-cat="药物共晶" data-text="cc-002 药物共晶 难溶性药物 共晶 盐型 多晶型 固体形态 筛选 晶型 溶解度 api 制剂">
-        <div class="phead"><span class="ptag">药物共晶</span><span class="pcode">CC-002</span></div>
-        <h3>难溶性药物共晶/盐型筛选</h3>
-        <p>面向难溶性药物的共晶、盐型及多晶型筛选与固体形态研究。</p>
-        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-002 难溶性药物共晶/盐型筛选">咨询</a>
-      </div>
-      <div class="pcard" data-cat="技术服务" data-text="cc-003 技术服务 表征 晶体工程 外包 联合研发 咨询 测试 委托">
-        <div class="phead"><span class="ptag">技术服务</span><span class="pcode">CC-003</span></div>
-        <h3>材料表征与晶体工程外包</h3>
-        <p>提供材料表征、晶体工程与工艺开发的外包与联合研发服务。</p>
-        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-003 材料表征与晶体工程外包">咨询</a>
-      </div>
-      <div class="pcard" data-cat="药物共晶" data-text="cc-004 药物共晶 多晶型 晶体质量 表征 调控 工艺 晶型 稳定性 批次一致性 pxrd">
-        <div class="phead"><span class="ptag">药物共晶</span><span class="pcode">CC-004</span></div>
-        <h3>多晶型鉴定与晶体质量调控</h3>
-        <p>提供晶体表征、多晶型鉴定与工艺优化服务，提升晶型稳定性与批次一致性。</p>
-        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-004 多晶型鉴定与晶体质量调控">咨询</a>
-      </div>
-      <div class="pcard" data-cat="功能材料" data-text="cc-005 功能材料 催化 吸附 高分子 复合 环境 能源 催化剂 分离">
-        <div class="phead"><span class="ptag">功能材料</span><span class="pcode">CC-005</span></div>
-        <h3>新型催化/吸附功能材料</h3>
-        <p>面向环境与能源场景的催化、吸附类功能材料设计与制备。</p>
-        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-005 新型催化/吸附功能材料">咨询</a>
-      </div>
-      <div class="pcard" data-cat="陶瓷材料" data-text="cc-006 陶瓷材料 高纯 前驱体 粉体 电子 结构 氧化铝 氮化铝 烧结">
-        <div class="phead"><span class="ptag">陶瓷材料</span><span class="pcode">CC-006</span></div>
-        <h3>高纯功能陶瓷前驱体粉体</h3>
-        <p>面向电子与结构应用的高纯陶瓷粉体，可控粒径与纯度。</p>
-        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-006 高纯功能陶瓷前驱体粉体">咨询</a>
-      </div>
-      <div class="pcard" data-cat="电子材料" data-text="cc-007 电子材料 封装 半导体 导热 可靠连接 环氧 基板 集成电路">
-        <div class="phead"><span class="ptag">电子材料</span><span class="pcode">CC-007</span></div>
-        <h3>电子专用封装材料</h3>
-        <p>半导体封装用专用电子材料，关注热管理与可靠连接。</p>
-        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-007 电子专用封装材料">咨询</a>
-      </div>
-      <div class="pcard" data-cat="金属/合金材料" data-text="cc-008 金属 合金 高性能铝 有色金属 轻量化 型材 导热 结构 铝合金">
-        <div class="phead"><span class="ptag">金属/合金材料</span><span class="pcode">CC-008</span></div>
-        <h3>高性能铝合金型材</h3>
-        <p>轻量化、高强度有色金属及合金材料，面向结构与导热场景。</p>
-        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-008 高性能铝合金型材">咨询</a>
-      </div>
-      <div class="pcard" data-cat="技术服务" data-text="cc-009 技术服务 开发 咨询 交流 转让 推广 技术 服务 委托 研发 合作">
-        <div class="phead"><span class="ptag">技术服务</span><span class="pcode">CC-009</span></div>
-        <h3>技术服务（开发·咨询·交流·转让·推广）</h3>
-        <p>提供技术开发、技术咨询、技术交流、技术转让、技术推广等一体化技术服务。</p>
-        <a class="pinq" href="mailto:caib@cocrystal.cn?subject=咨询：CC-009 技术服务（开发·咨询·交流·转让·推广）">咨询</a>
-      </div>
-    </div>
+    <div class="pcats" id="pcats"></div>
+    <div class="pgrid" id="pgrid"></div>
     <p id="noresult" class="note" style="display:none;margin-top:14px">未找到匹配的产品，请调整关键词或切换分类。</p>
   </section>
   <section id="about">
@@ -211,6 +154,11 @@
       <span>化工产品销售（不含许可类化工产品）</span>
     </div>
   </section>
+  <section id="search">
+    <h2>产物库检索</h2>
+    <p class="note">收录工作区 20 个产物库 + 4 个原料库，共约 12.7 万条化合物，支持关键词 / 分子式 / CAS / 试剂 / CCDC 一键检索、结构式实时绘制。</p>
+    <iframe src="search/" title="产物库检索站" loading="lazy" class="searchframe"></iframe>
+  </section>
   <section id="contact">
     <h2>联系方式</h2>
     <div class="contact">
@@ -229,30 +177,73 @@
   var burger=document.getElementById('hburger'),menu=document.getElementById('menu');
   burger.addEventListener('click',function(){menu.classList.toggle('open');});
   menu.querySelectorAll('a').forEach(function(a){a.addEventListener('click',function(){menu.classList.remove('open');});});
-  // 产品搜索 + 分类筛选（纯前端）
-  var cards=Array.prototype.slice.call(document.querySelectorAll('.pcard'));
-  var q=document.getElementById('search'),catBtns=document.querySelectorAll('.catbtn');
-  var curCat='全部';
-  function apply(){
-    var kw=q.value.trim().toLowerCase();
-    var shown=0;
-    cards.forEach(function(c){
-      var text=c.getAttribute('data-text');
-      var okCat=(curCat==='全部')||(c.getAttribute('data-cat')===curCat);
-      var okKw=!kw||text.indexOf(kw)>-1;
-      var ok=(okCat&&okKw);
-      c.style.display=ok?'':'none';
-      if(ok) shown++;
+
+  // ===== 产品展示：数据驱动 =====
+  // 内置兜底数据（与 products.json 一致）；若 products.json 随站部署，则以其为准。
+  var FALLBACK=[
+    {"code":"CC-001","name":"单晶设计、培养与生长","cat":"晶体生长","desc":"提供单晶的设计、培养与生长服务，涵盖晶体生长工艺开发与质量控制。","kw":"单晶 设计 培养 生长 晶体 工艺 质量控制"},
+    {"code":"CC-002","name":"难溶性药物共晶/盐型筛选","cat":"药物共晶","desc":"面向难溶性药物的共晶、盐型及多晶型筛选与固体形态研究。","kw":"药物共晶 难溶性 盐型 多晶型 固体形态 筛选 溶解度"},
+    {"code":"CC-003","name":"材料表征与晶体工程外包","cat":"技术服务","desc":"提供材料表征、晶体工程与工艺开发的外包与联合研发服务。","kw":"技术服务 表征 晶体工程 外包 联合研发 测试"},
+    {"code":"CC-004","name":"多晶型鉴定与晶体质量调控","cat":"药物共晶","desc":"提供晶体表征、多晶型鉴定与工艺优化服务，提升晶型稳定性与批次一致性。","kw":"多晶型 鉴定 晶体 质量 调控 工艺 稳定性 批次"},
+    {"code":"CC-005","name":"新型催化/吸附功能材料","cat":"功能材料","desc":"面向环境与能源场景的催化、吸附类功能材料设计与制备。","kw":"功能材料 催化 吸附 高分子 复合 环境 能源"},
+    {"code":"CC-006","name":"高纯功能陶瓷前驱体粉体","cat":"陶瓷材料","desc":"面向电子与结构应用的高纯陶瓷粉体，可控粒径与纯度。","kw":"陶瓷 高纯 前驱体 粉体 电子 结构"},
+    {"code":"CC-007","name":"电子专用封装材料","cat":"电子材料","desc":"半导体封装用专用电子材料，关注热管理与可靠连接。","kw":"电子 封装 半导体 导热 可靠连接 基板"},
+    {"code":"CC-008","name":"高性能铝合金型材","cat":"金属/合金材料","desc":"轻量化、高强度有色金属及合金材料，面向结构与导热场景。","kw":"金属 合金 铝 轻量化 高强度 导热 结构"},
+    {"code":"CC-009","name":"技术服务（开发·咨询·交流·转让·推广）","cat":"技术服务","desc":"提供技术开发、技术咨询、技术交流、技术转让、技术推广等一体化技术服务。","kw":"技术服务 开发 咨询 交流 转让 推广 研发"}
+  ];
+  var pgrid=document.getElementById('pgrid'),
+      pcats=document.getElementById('pcats'),
+      psearch=document.getElementById('search'),
+      noresult=document.getElementById('noresult');
+  var PRODUCTS=FALLBACK.slice(),curCat='全部';
+  function esc(s){return (s||'').replace(/[&<>"]/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+  function renderCats(){
+    var cats=['全部'];
+    PRODUCTS.forEach(function(p){ if(cats.indexOf(p.cat)<0) cats.push(p.cat); });
+    pcats.innerHTML='';
+    cats.forEach(function(c){
+      var b=document.createElement('button');
+      b.className='catbtn'+(c===curCat?' active':'');
+      b.setAttribute('data-cat',c);
+      b.textContent=c;
+      b.addEventListener('click',function(){
+        curCat=c;
+        Array.prototype.forEach.call(pcats.children,function(x){x.classList.remove('active');});
+        b.classList.add('active'); apply();
+      });
+      pcats.appendChild(b);
     });
-    document.getElementById('noresult').style.display = shown? 'none':'block';
   }
-  q.addEventListener('input',apply);
-  catBtns.forEach(function(b){b.addEventListener('click',function(){
-    curCat=b.getAttribute('data-cat');
-    catBtns.forEach(function(x){x.classList.remove('active');});
-    b.classList.add('active');apply();
-  });});
-  apply();
+  function apply(){
+    var kw=psearch.value.trim().toLowerCase(),shown=0;
+    pgrid.innerHTML='';
+    PRODUCTS.forEach(function(p){
+      var hay=(p.code+' '+p.name+' '+p.cat+' '+(p.kw||'')).toLowerCase();
+      var okCat=(curCat==='全部')||(p.cat===curCat);
+      var okKw=!kw||hay.indexOf(kw)>-1;
+      if(okCat&&okKw){
+        var subject='咨询：'+p.code+' '+p.name;
+        var card=document.createElement('div');
+        card.className='pcard';
+        card.setAttribute('data-cat',p.cat);
+        card.innerHTML=
+          '<div class="phead"><span class="ptag">'+esc(p.cat)+'</span><span class="pcode">'+esc(p.code)+'</span></div>'+
+          '<h3>'+esc(p.name)+'</h3>'+
+          '<p>'+esc(p.desc)+'</p>'+
+          '<a class="pinq" href="mailto:caib@cocrystal.cn?subject='+encodeURIComponent(subject)+'">咨询</a>';
+        pgrid.appendChild(card); shown++;
+      }
+    });
+    noresult.style.display=shown?'none':'block';
+  }
+  renderCats(); apply();
+  // 若 products.json 已部署，则以其覆盖（数据驱动更新）
+  fetch('products.json').then(function(r){return r.json();}).then(function(d){
+    if(Array.isArray(d)&&d.length){ PRODUCTS=d; }
+    renderCats(); apply();
+  }).catch(function(){ /* 保留内置兜底数据 */ });
+  psearch.addEventListener('input',apply);
 </script>
 </body>
 </html>

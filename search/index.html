@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>产物库检索站 · 共晶科技</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="loading" id="loading">
+  <div class="spinner"></div>
+  <div id="loading-text">正在加载结构引擎与产物数据…</div>
+</div>
+
+<header>
+  <div class="title-row">
+    <h1>产物库检索站</h1>
+    <span class="subtitle">关键词 / 分子式 / CAS / 试剂 / CCDC 一键检索 · 结构式实时绘制</span>
+  </div>
+  <div class="controls">
+    <input id="search" type="text" placeholder="输入关键词：如 苯甲醛、C14H11NO2、胂酸、酰亚胺、CCDC 269036…" autocomplete="off">
+    <select id="catFilter"><option value="">全部分类</option></select>
+    <span class="meta" id="meta">—</span>
+  </div>
+</header>
+
+<div class="main">
+  <div class="status" id="status"></div>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" style="display:none">未找到匹配的产物，换个关键词试试。</div>
+  <div class="pager" id="pager"></div>
+</div>
+
+<div class="foot">
+  <div>数据来源：工作区 20 个产物库 + 4 个原料库（共约 12.7 万条）。结构式由 RDKit 本地渲染，支持砷/金属等杂元素。</div>
+  <div>检索字段：产物名称、英文名、分子式、SMILES、反应分类、来源库、所用试剂、CCDC 编号。多关键词空格分隔为「与」关系。</div>
+  <div>注：嘧啶 / 咪唑(2-芳基) / 三嗪 / 吡唑 四类（共约 1405 条）源数据未提供产物 SMILES，仅以分子式呈现，结构式待补。</div>
+</div>
+
+<script src="lib/rdkit/RDKit_minimal.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
