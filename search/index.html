@@ -20,6 +20,22 @@
   <div class="controls">
     <input id="search" type="text" placeholder="输入关键词：如 苯甲醛、C14H11NO2、胂酸、酰亚胺、CCDC 269036…" autocomplete="off">
     <select id="catFilter"><option value="">全部分类</option></select>
+    <span class="sortbox">排序
+      <select id="sortField">
+        <option value="default">默认（库顺序）</option>
+        <option value="name">名称</option>
+        <option value="name_en">英文名</option>
+        <option value="formula">分子式</option>
+        <option value="mw">分子量</option>
+        <option value="cas">CAS</option>
+        <option value="cat">分类</option>
+        <option value="src">来源库</option>
+      </select>
+      <select id="sortDir">
+        <option value="asc">升序</option>
+        <option value="desc">降序</option>
+      </select>
+    </span>
     <span class="meta" id="meta">—</span>
   </div>
 </header>

@@ -6,7 +6,8 @@
 
 let DATA = [];
 let BLOBS = [];          // 每条记录的检索文本(小写)
-let FILTERED = [];       // 当前结果在 DATA 中的下标
+let FILTERED = [];       // 当前结果在 DATA 中的下标(经排序后的显示顺序)
+let MATCHED = [];        // 当前命中的下标(库顺序, 未经排序)
 const PER_PAGE = 24;
 let page = 0;
 let RDKit = null;
@@ -79,6 +80,13 @@ async function load(){
     if (mres.ok) manifest = await mres.json();
   } catch(e){ manifest = null; }
 
+  // 加载统计(含产物库默认展示顺序 library_order)
+  let STATS = null;
+  try {
+    const sres = await fetch('data/stats.json', { cache: 'no-cache' });
+    if (sres.ok) STATS = await sres.json();
+  } catch(e){ STATS = null; }
+
   if (manifest && Array.isArray(manifest.shards) && manifest.shards.length){
     if (loadingText) loadingText.textContent =
       `正在并行加载 ${manifest.shards.length} 个数据分片，共约 ${(manifest.count/10000).toFixed(1)} 万条…`;
@@ -101,10 +109,17 @@ async function load(){
     r.x ? Object.values(r.x).join(' ') : ''
   ].filter(Boolean).join(' ').toLowerCase());
 
-  // 分类下拉
+  // 分类下拉: 优先按 stats.json 的 library_order 展示(用户指定重排顺序), 未列出的库追加到末尾
   const counts = {};
   DATA.forEach(r => { counts[r.g] = (counts[r.g] || 0) + 1; });
-  const cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+  let cats;
+  if (STATS && Array.isArray(STATS.library_order) && STATS.library_order.length){
+    const present = new Set(Object.keys(counts));
+    cats = STATS.library_order.filter(c => present.has(c));
+    Object.keys(counts).forEach(c => { if (!cats.includes(c)) cats.push(c); });
+  } else {
+    cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+  }
   const sel = document.getElementById('catFilter');
   cats.forEach(c => {
     const o = document.createElement('option');
@@ -130,11 +145,48 @@ function search(){
     }
     if (ok) out.push(i);
   }
-  FILTERED = out;
+  MATCHED = out;
+  applySort();
   page = 0;
   const dt = (performance.now() - t0).toFixed(0);
   document.getElementById('status').innerHTML =
     '匹配 <b>' + FILTERED.length.toLocaleString() + '</b> 条 · 用时 ' + dt + ' ms';
+  render();
+}
+
+/* ---------- 排序(前端, 仅影响显示顺序) ---------- */
+function cmpNum(x, y){
+  const xn = Number(x), yn = Number(y);
+  const ax = isNaN(xn), ay = isNaN(yn);
+  if (ax && ay) return 0;
+  if (ax) return 1;   // 缺值排末尾
+  if (ay) return -1;
+  return xn - yn;
+}
+function applySort(){
+  const field = document.getElementById('sortField').value;
+  const dir = document.getElementById('sortDir').value === 'desc' ? -1 : 1;
+  if (field === 'default'){
+    FILTERED = MATCHED.slice();
+    return;
+  }
+  FILTERED = MATCHED.slice().sort((a, b) => {
+    const va = DATA[a], vb = DATA[b];
+    let x, y;
+    switch (field){
+      case 'name':    x = va.n || ''; y = vb.n || ''; return dir * x.localeCompare(y, 'zh');
+      case 'name_en': x = va.e || ''; y = vb.e || ''; return dir * x.localeCompare(y, 'zh');
+      case 'formula': x = va.f || ''; y = vb.f || ''; return dir * x.localeCompare(y, 'zh');
+      case 'cas':     x = va.c || ''; y = vb.c || ''; return dir * x.localeCompare(y, 'zh');
+      case 'cat':     x = va.g || ''; y = vb.g || ''; return dir * x.localeCompare(y, 'zh');
+      case 'src':     x = va.r || ''; y = vb.r || ''; return dir * x.localeCompare(y, 'zh');
+      case 'mw':      return dir * cmpNum(va.m, vb.m);
+      default:        return 0;
+    }
+  });
+}
+function onSortChange(){
+  applySort();
   render();
 }
 
@@ -232,5 +284,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('search').addEventListener('input', debounce(search, 180));
   document.getElementById('catFilter').addEventListener('change', search);
+  document.getElementById('sortField').addEventListener('change', onSortChange);
+  document.getElementById('sortDir').addEventListener('change', onSortChange);
   search();
 });

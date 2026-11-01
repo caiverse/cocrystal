@@ -36,6 +36,7 @@ select{
   font-size:14px;color:var(--text);cursor:pointer;max-width:240px;
 }
 .meta{color:var(--muted);font-size:12px;margin-left:auto;white-space:nowrap}
+.sortbox{display:flex;gap:6px;align-items:center;color:var(--muted);font-size:13px;white-space:nowrap}
 .main{max-width:1280px;margin:18px auto;padding:0 20px 60px}
 .status{color:var(--muted);font-size:13px;margin:6px 0 16px;min-height:18px}
 .status b{color:var(--primary)}
