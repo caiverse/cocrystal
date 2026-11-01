@@ -11,6 +11,7 @@ let MATCHED = [];        // 当前命中的下标(库顺序, 未经排序)
 const PER_PAGE = 24;
 let page = 0;
 let RDKit = null;
+let LIBRARY_ORDER = [];   // 产物库默认展示顺序(来自 stats.json), 供默认排序分组用
 
 const EXTRA_LABEL = {
   avail: '市售/文献', alkyl: '推荐烷化剂', ether_class: '类别', r_group: '烷氧基 R',
@@ -86,6 +87,7 @@ async function load(){
     const sres = await fetch('data/stats.json', { cache: 'no-cache' });
     if (sres.ok) STATS = await sres.json();
   } catch(e){ STATS = null; }
+  LIBRARY_ORDER = (STATS && Array.isArray(STATS.library_order)) ? STATS.library_order : [];
 
   if (manifest && Array.isArray(manifest.shards) && manifest.shards.length){
     if (loadingText) loadingText.textContent =
@@ -167,7 +169,13 @@ function applySort(){
   const field = document.getElementById('sortField').value;
   const dir = document.getElementById('sortDir').value === 'desc' ? -1 : 1;
   if (field === 'default'){
-    FILTERED = MATCHED.slice();
+    // 默认: 按产物库顺序分组排列(同源 stats.json.library_order)
+    if (LIBRARY_ORDER.length){
+      const pos = c => { const i = LIBRARY_ORDER.indexOf(c); return i < 0 ? 1e9 : i; };
+      FILTERED = MATCHED.slice().sort((a, b) => pos(DATA[a].g) - pos(DATA[b].g));
+    } else {
+      FILTERED = MATCHED.slice();
+    }
     return;
   }
   FILTERED = MATCHED.slice().sort((a, b) => {
@@ -192,10 +200,13 @@ function onSortChange(){
 
 /* ---------- 渲染 ---------- */
 function cardHTML(r){
-  const name = r.n || r.f || '未命名产物';
-  const formula = r.f ? `<span class="formula">${fmtFormula(r.f)}</span>` : '';
+  const f = r.f || '';
+  const realName = (r.n && r.n.trim() && r.n.trim() !== f.trim()) ? r.n.trim() : '';
+  const cnameHTML = realName ? escapeHTML(realName) : (f ? fmtFormula(f) : '未命名产物');
+  const formula = (f && realName) ? `<span class="formula">${fmtFormula(f)}</span>` : '';
   const mw = (r.m != null) ? `<span class="mw">MW ${r.m}</span>` : '';
   const cas = r.c ? `<span class="tag">CAS ${escapeHTML(r.c)}</span>` : '';
+  const ename = (r.e && r.e.trim()) ? `<div class="ename">${escapeHTML(r.e.trim())}</div>` : '';
   const tags = [`<span class="tag">${escapeHTML(r.g)}</span>`];
   if (r.o) tags.push(`<span class="tag">母体 ${escapeHTML(r.o)}</span>`);
   const reagents = r.a ? `<div class="kv"><span class="k">试剂</span><span>${escapeHTML(r.a)}</span></div>` : '';
@@ -210,7 +221,8 @@ function cardHTML(r){
   const src = `<div class="kv"><span class="k">来源</span><span>${escapeHTML(r.r)}</span></div>`;
   return `<div class="card">
     <div class="struct"></div>
-    <div class="cname">${escapeHTML(name)}</div>
+    <div class="cname">${cnameHTML}</div>
+    ${ename}
     <div class="crow">${formula}${mw}${cas}</div>
     <div class="tags">${tags.join('')}</div>
     ${reagents}

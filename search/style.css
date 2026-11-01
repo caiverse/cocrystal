@@ -57,6 +57,7 @@ select{
 .struct svg{max-width:100%;max-height:100%}
 .struct .noimg{color:var(--muted);font-size:12px;text-align:center;padding:10px}
 .cname{font-weight:600;font-size:15px;line-height:1.35;word-break:break-word}
+.ename{font-style:italic;color:#6b7280;font-size:12.5px;margin:1px 0 6px;word-break:break-word}
 .crow{display:flex;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
 .crow .k{color:#9aa5b1}
 .formula{font-family:"Cambria Math","Times New Roman",serif;font-size:15px;color:#27313f}
