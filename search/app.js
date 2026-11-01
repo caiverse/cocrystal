@@ -54,8 +54,10 @@ async function initRDKit(){
 /* ---------- 结构式绘制 ---------- */
 function molToSVG(smiles){
   if (!RDKit || !smiles) return null;
-  // 盐型 SMILES(含 '.') RDKit WASM 会整体返回 null, 改为逐片段尝试(丢弃反离子)
-  const cands = smiles.includes('.') ? smiles.split('.').concat(smiles) : [smiles];
+  // 盐型 SMILES(含 '.') 优先用整体绘制; 若整体失败, 再按片段尝试, 但片段需按长度降序,
+  // 优先绘制主分子而非反离子(如 [H+] / [Cl-]), 否则会只画出 H⁺ 等反离子。
+  const parts = smiles.includes('.') ? smiles.split('.') : [smiles];
+  const cands = [smiles].concat(parts.slice().sort((a, b) => b.length - a.length));
   for (const c of cands){
     let mol = null;
     try { mol = RDKit.get_mol(c); } catch(e){ mol = null; }
@@ -64,7 +66,7 @@ function molToSVG(smiles){
       const svg = mol.get_svg(250, 195);
       mol.delete();
       return svg;
-    } catch(e){ mol.delete(); }
+    } catch(e){ if (mol) mol.delete(); }
   }
   return null;
 }
