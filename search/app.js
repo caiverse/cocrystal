@@ -67,11 +67,35 @@ function molToSVG(smiles){
   return null;
 }
 
-/* ---------- 数据加载 ---------- */
+/* ---------- 数据加载(支持分片) ---------- */
 async function load(){
-  const res = await fetch('data/products.json');
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  DATA = await res.json();
+  const loadingText = document.getElementById('loading-text');
+
+  // 优先读取分片清单(products.manifest.json), 回退到单一 products.json(向后兼容)
+  let records = [];
+  let manifest = null;
+  try {
+    const mres = await fetch('data/products.manifest.json', { cache: 'no-cache' });
+    if (mres.ok) manifest = await mres.json();
+  } catch(e){ manifest = null; }
+
+  if (manifest && Array.isArray(manifest.shards) && manifest.shards.length){
+    if (loadingText) loadingText.textContent =
+      `正在并行加载 ${manifest.shards.length} 个数据分片，共约 ${(manifest.count/10000).toFixed(1)} 万条…`;
+    const parts = await Promise.all(manifest.shards.map(async (name) => {
+      const r = await fetch('data/' + name, { cache: 'no-cache' });
+      if (!r.ok) throw new Error('分片 ' + name + ' HTTP ' + r.status);
+      return r.json();
+    }));
+    records = [].concat(...parts);
+  } else {
+    if (loadingText) loadingText.textContent = '正在加载产物库数据…';
+    const res = await fetch('data/products.json', { cache: 'no-cache' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    records = await res.json();
+  }
+
+  DATA = records;
   BLOBS = DATA.map(r => [
     r.n, r.e, r.f, r.s, r.g, r.r, r.a, r.d, r.o, r.c,
     r.x ? Object.values(r.x).join(' ') : ''
