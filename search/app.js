@@ -8,7 +8,7 @@ let DATA = [];
 let BLOBS = [];          // 每条记录的检索文本(小写)
 let FILTERED = [];       // 当前结果在 DATA 中的下标(经排序后的显示顺序)
 let MATCHED = [];        // 当前命中的下标(库顺序, 未经排序)
-const PER_PAGE = 24;
+let PER_PAGE = 24;
 let page = 0;
 let RDKit = null;
 let LIBRARY_ORDER = [];   // 产物库默认展示顺序(来自 stats.json), 供默认排序分组用
@@ -273,10 +273,16 @@ function render(){
 
 function renderPager(pages, start, end, total){
   const pager = document.getElementById('pager');
-  let html = `<button id="prev"${page<=0?' disabled':''}>上一页</button>`;
+  const sizes = [24, 50, 100, 200, 500];
+  const selOpts = sizes.map(v =>
+    `<option value="${v}"${v === PER_PAGE ? ' selected' : ''}>${v}</option>`).join('');
+  let html = `<span class="pgsize-wrap">每页 <select id="pageSize" class="pgsize">${selOpts}</select> 条</span>`;
+  html += `<button id="prev"${page<=0?' disabled':''}>上一页</button>`;
   html += `<span class="pginfo">第 ${page+1} / ${pages} 页 · 显示 ${start+1}-${end} / ${total.toLocaleString()}</span>`;
   html += `<button id="next"${page>=pages-1?' disabled':''}>下一页</button>`;
   pager.innerHTML = html;
+  const ps = document.getElementById('pageSize');
+  if (ps) ps.onchange = () => { PER_PAGE = parseInt(ps.value, 10) || 24; page = 0; render(); };
   const prev = document.getElementById('prev');
   const next = document.getElementById('next');
   if (prev && page > 0) prev.onclick = () => { page--; render(); window.scrollTo({top:0,behavior:'smooth'}); };

@@ -77,6 +77,9 @@ select{
 .pager button:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}
 .pager button:disabled{opacity:.4;cursor:not-allowed}
 .pager .pginfo{color:var(--muted);font-size:13px}
+.pager .pgsize-wrap{display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--muted)}
+.pager select.pgsize{border:1px solid var(--border);background:#fff;color:var(--text);border-radius:8px;padding:6px 8px;font-size:13px;cursor:pointer}
+.pager select.pgsize:hover{border-color:var(--primary)}
 .loading{
   position:fixed;inset:0;background:rgba(238,241,246,.85);display:flex;align-items:center;
   justify-content:center;flex-direction:column;gap:14px;z-index:50;font-size:14px;color:var(--muted);
