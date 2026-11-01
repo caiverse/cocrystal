@@ -92,3 +92,52 @@ select{
 .foot{max-width:1280px;margin:0 auto 40px;padding:0 20px;color:var(--muted);font-size:12px;line-height:1.7}
 .foot code{background:#fff;border:1px solid var(--border);border-radius:4px;padding:0 4px}
 .empty{text-align:center;color:var(--muted);padding:60px 0;font-size:15px}
+
+/* ---------- 结构检索面板 ---------- */
+.struct-panel{
+  max-width:1280px;margin:18px auto 0;padding:0 20px;
+}
+.struct-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+.struct-head h2{font-size:17px;margin:0;font-weight:700}
+.struct-head .subtitle{color:var(--muted);font-size:12px}
+.struct-controls{
+  display:grid;grid-template-columns:1.35fr 1fr;gap:18px;
+  background:var(--card);border:1px solid var(--border);border-radius:14px;
+  padding:16px;box-shadow:var(--shadow);
+}
+.struct-left{display:flex;flex-direction:column;gap:10px}
+.struct-right{display:flex;flex-direction:column;gap:10px;justify-content:flex-start}
+.btn{
+  border:1px solid var(--border);background:#fff;color:var(--text);border-radius:9px;
+  padding:9px 14px;cursor:pointer;font-size:13px;transition:.15s;align-self:flex-start;
+}
+.btn:hover{border-color:var(--primary);color:var(--primary)}
+.btn-primary{background:var(--primary);color:#fff;border-color:var(--primary);font-weight:600;font-size:14px;padding:11px 20px}
+.btn-primary:hover{background:var(--primary-d);color:#fff}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.ketcher-status{font-size:12px;color:var(--muted);min-height:16px}
+.ketcher-wrap{width:100%}
+.struct-input{
+  width:100%;min-height:64px;resize:vertical;padding:10px 12px;font-size:13px;
+  border:1px solid var(--border);border-radius:10px;outline:none;font-family:"Cambria Math","Consolas",monospace;
+}
+.struct-input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(31,111,235,.12)}
+.ex-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted)}
+.exSmiles{
+  border:1px solid var(--border);background:#f7f9fc;color:#33415a;border-radius:7px;
+  padding:4px 9px;cursor:pointer;font-size:12px;transition:.15s;
+}
+.exSmiles:hover{border-color:var(--primary);color:var(--primary)}
+.mode-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:14px}
+.mode-row label{cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.topn{display:inline-flex;align-items:center;gap:5px;color:var(--muted);font-size:13px}
+.topn input{border:1px solid var(--border);border-radius:7px;padding:5px 7px;font-size:13px}
+.struct-status{font-size:13px;color:var(--primary);min-height:18px}
+.progress{height:7px;background:#eef2f7;border-radius:99px;overflow:hidden;display:none}
+.struct-status:not(:empty)~.progress{display:block}
+.progress-bar{height:100%;width:0;background:var(--primary);border-radius:99px;transition:width .15s linear}
+.hint{font-size:11.5px;color:var(--muted);line-height:1.6;background:#f7f9fc;border:1px dashed var(--border);border-radius:9px;padding:8px 10px}
+.sim{display:inline-block;background:#e9f7ee;color:#1e7d43;border-radius:6px;padding:1px 8px;font-size:12px;font-weight:600}
+@media (max-width:860px){
+  .struct-controls{grid-template-columns:1fr}
+}

@@ -12,6 +12,8 @@ let PER_PAGE = 24;
 let page = 0;
 let RDKit = null;
 let LIBRARY_ORDER = [];   // 产物库默认展示顺序(来自 stats.json), 供默认排序分组用
+let ATOM_CNT = [];        // [结构检索] 每条记录的重原子数(来自分子式, 不含 H), 用于子结构/精确预筛
+window.SIM_MAP = {};      // [结构检索] 记录 id -> 相似度(0..1), 仅相似度模式
 
 const EXTRA_LABEL = {
   avail: '市售/文献', alkyl: '推荐烷化剂', ether_class: '类别', r_group: '烷氧基 R',
@@ -113,6 +115,13 @@ async function load(){
     r.x ? Object.values(r.x).join(' ') : ''
   ].filter(Boolean).join(' ').toLowerCase());
 
+  // [结构检索] 重原子数(不含 H)预计算, 用于子结构/完全相同预筛
+  ATOM_CNT = DATA.map(r => {
+    const f = r.f || ''; let s = 0; let m; const re = /([A-Z][a-z]?)(\d*)/g;
+    while ((m = re.exec(f)) !== null){ if (m[1] === 'H') continue; s += (m[2] ? parseInt(m[2], 10) : 1); }
+    return s;
+  });
+
   // 分类下拉: 优先按 stats.json 的 library_order 展示(用户指定重排顺序), 未列出的库追加到末尾
   const counts = {};
   DATA.forEach(r => { counts[r.g] = (counts[r.g] || 0) + 1; });
@@ -136,6 +145,7 @@ async function load(){
 /* ---------- 检索 ---------- */
 function search(){
   const t0 = performance.now();
+  window.SIM_MAP = {};   // 文本检索时清除结构检索遗留的相似度标注
   const q = document.getElementById('search').value.trim().toLowerCase();
   const cat = document.getElementById('catFilter').value;
   const terms = q.split(/\s+/).filter(Boolean);
@@ -209,6 +219,8 @@ function cardHTML(r){
   const mw = (r.m != null) ? `<span class="mw">MW ${r.m}</span>` : '';
   const cas = r.c ? `<span class="tag">CAS ${escapeHTML(r.c)}</span>` : '';
   const ename = (r.e && r.e.trim()) ? `<div class="ename">${escapeHTML(r.e.trim())}</div>` : '';
+  const sim = (window.SIM_MAP && r.i != null && window.SIM_MAP[r.i] != null) ? window.SIM_MAP[r.i] : null;
+  const simHTML = (sim != null) ? `<div class="sim">相似度 ${Math.round(sim * 100)}%</div>` : '';
   const tags = [`<span class="tag">${escapeHTML(r.g)}</span>`];
   if (r.o) tags.push(`<span class="tag">母体 ${escapeHTML(r.o)}</span>`);
   const reagents = r.a ? `<div class="kv"><span class="k">试剂</span><span>${escapeHTML(r.a)}</span></div>` : '';
@@ -225,6 +237,7 @@ function cardHTML(r){
     <div class="struct"></div>
     <div class="cname">${cnameHTML}</div>
     ${ename}
+    ${simHTML}
     <div class="crow">${formula}${mw}${cas}</div>
     <div class="tags">${tags.join('')}</div>
     ${reagents}

@@ -40,6 +40,43 @@
   </div>
 </header>
 
+<section class="struct-panel">
+  <div class="struct-head">
+    <h2>结构检索</h2>
+    <span class="subtitle">子结构 / 完全相同 / 相似度 Top-N · 纯前端（RDKit WASM），全库 78 万条</span>
+  </div>
+  <div class="struct-controls">
+    <div class="struct-left">
+      <button id="btnLoadKetcher" class="btn">加载画板（Ketcher 在线绘制）</button>
+      <div id="ketcherStatus" class="ketcher-status"></div>
+      <div id="ketcherFrameWrap" class="ketcher-wrap"></div>
+      <textarea id="structInput" class="struct-input" placeholder="或直接粘贴 SMILES / SMARTS（如 c1ccccc1、c1ccncc1、CC(=O)O）。绘制或粘贴后点“运行结构检索”。"></textarea>
+      <div class="ex-row">
+        <span>示例：</span>
+        <button class="exSmiles" data-smiles="c1ccccc1">苯环</button>
+        <button class="exSmiles" data-smiles="c1ccncc1">吡啶</button>
+        <button class="exSmiles" data-smiles="c1ccoc1">呋喃</button>
+        <button class="exSmiles" data-smiles="c1csc1">噻吩</button>
+        <button class="exSmiles" data-smiles="C(=O)O">羧基</button>
+        <button class="exSmiles" data-smiles="CC(=O)Oc1ccccc1C(=O)O">阿司匹林</button>
+        <button class="exSmiles" data-smiles="c1ccc2[nH]c(=O)[nH]c2c1">嘌呤二酮</button>
+      </div>
+    </div>
+    <div class="struct-right">
+      <div class="mode-row">
+        <label><input type="radio" name="structMode" value="sub" checked> 子结构</label>
+        <label><input type="radio" name="structMode" value="exact"> 完全相同</label>
+        <label><input type="radio" name="structMode" value="similar"> 相似度</label>
+        <span id="structTopNWrap" class="topn" style="display:none">Top-N <input id="structTopN" type="number" min="1" max="500" value="50"></span>
+      </div>
+      <button id="btnStructRun" class="btn btn-primary">运行结构检索</button>
+      <div id="structStatus" class="struct-status"></div>
+      <div class="progress"><div id="structProgressBar" class="progress-bar"></div></div>
+      <div class="hint">提示：子结构对“宽泛查询”（如裸苯环）命中多、耗时较长；母核/取代片段越具体越快。完全相同＝同分子式且图同构；相似度基于 Morgan 指纹 Tanimoto。</div>
+    </div>
+  </div>
+</section>
+
 <div class="main">
   <div class="status" id="status"></div>
   <div class="grid" id="grid"></div>
@@ -48,12 +85,13 @@
 </div>
 
 <div class="foot">
-  <div>数据来源：27 个产物库与原料库（共 437,819 条）。结构式由 RDKit 本地渲染，支持砷/金属等杂元素。</div>
+  <div>数据来源：36 个产物库（按 32 个分类聚合，共 780,854 条），全部带结构 SMILES；结构式由 RDKit 本地渲染，支持砷/金属等杂元素。</div>
   <div>检索字段：产物名称、英文名、分子式、SMILES、反应分类、来源库、所用试剂、CCDC 编号。多关键词空格分隔为「与」关系。</div>
-  <div>注：嘧啶 / 咪唑(2-芳基) / 三嗪 / 吡唑 四类（共约 1405 条）源数据未提供产物 SMILES，仅以分子式呈现，结构式待补。</div>
+  <div><b>结构检索</b>：在上方“结构检索”面板用画板绘制或粘贴 SMILES/SMARTS，支持子结构、完全相同、相似度 Top-N 三种模式，结果同样展示于下方卡片网格。</div>
 </div>
 
 <script src="lib/rdkit/RDKit_minimal.js"></script>
 <script src="app.js"></script>
+<script src="structsearch.js"></script>
 </body>
 </html>
