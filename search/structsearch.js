@@ -27,11 +27,11 @@ function parseFormulaElements(f){
   return m;
 }
 // 查询 SMILES/SMARTS -> {heavy, elem}（best-effort, 仅用于预筛; 正确性由 RDKit 保证）
+// 通用解析元素符号, 覆盖 As/Se/Si 等杂元素(画板可能绘制含 As 的胂酸)
 function parseStructElements(s){
   const elem = {};
   let heavy = 0;
   if (!s) return {heavy, elem};
-  const AN = {H:1,B:5,C:6,N:7,O:8,F:9,P:15,S:16,Cl:17,Br:35,I:53};
   const n = s.length;
   let i = 0;
   while (i < n){
@@ -42,24 +42,22 @@ function parseStructElements(s){
       const inner = s.slice(i + 1, end);
       const em = inner.match(/^([A-Z][a-z]?)/);
       const el = em ? em[1] : '';
-      const hm = inner.match(/H(\d*)/);
-      const hc = hm ? (hm[1] ? parseInt(hm[1], 10) : 1) : 0;
-      if (el && AN[el] && AN[el] !== 1){ elem[el] = (elem[el] || 0) + 1; heavy++; }
+      if (el && el !== 'H'){ elem[el] = (elem[el] || 0) + 1; heavy++; }
       i = end + 1;
     } else if (ch === '#'){
       const em = s.slice(i).match(/^#(\d+)/);
       if (em){
         const an = parseInt(em[1], 10);
-        const map = {5:'B',6:'C',7:'N',8:'O',9:'F',15:'P',16:'S',17:'Cl',35:'Br',53:'I'};
+        const map = {5:'B',6:'C',7:'N',8:'O',9:'F',14:'Si',15:'P',16:'S',17:'Cl',33:'As',34:'Se',35:'Br',53:'I'};
         const el = map[an];
-        if (el && an !== 1){ elem[el] = (elem[el] || 0) + 1; heavy++; }
+        if (el){ elem[el] = (elem[el] || 0) + 1; heavy++; }
         i += em[0].length; continue;
       }
       i++;
     } else {
       const two = s.slice(i, i + 2);
       let el = null;
-      if (two === 'Cl' || two === 'Br'){ el = two; i += 2; }
+      if (two === 'Cl' || two === 'Br' || two === 'As' || two === 'Se' || two === 'Si'){ el = two; i += 2; }
       else if ('BCNOFIPSbcnops'.includes(ch)){ el = ch.toUpperCase(); i += 1; }
       else { i += 1; continue; }
       if (el && el !== 'H'){ elem[el] = (elem[el] || 0) + 1; heavy++; }
@@ -117,18 +115,39 @@ function tanimoto(qbits, idx){
   return denom ? inter / denom : 0;
 }
 
+/* ---------- SMILES 归一化 & SMARTS 识别 ---------- */
+// 画板 Ketcher(Indigo) 输出的 SMILES 常把苯环写成 Kekulé 形式(大写 C + 显式双键),
+// 而目标库 SMILES 由 RDKit 生成(芳香小写 c). 直接把 Kekulé SMILES 交给 RDKit.get_qmol
+// 会保留非芳香标志, 导致子结构匹配对芳香环 0 命中. 这里统一经 RDKit 重新感知芳香性.
+function normalizeSmiles(smi){
+  if (!smi) return smi;
+  let m = null;
+  try { m = RDKit.get_mol(smi); } catch(e){ m = null; }
+  if (!m) return smi;            // 解析失败则原样返回, 交由上层报错
+  const out = m.get_smiles();
+  m.delete();
+  return (out && out.trim()) ? out.trim() : smi;
+}
+// SMARTS 含通配/逻辑/原子类约束, 不应被当作 SMILES 归一化(会破坏语义); 仅 SMILES 才归一化
+function looksLikeSMARTS(s){
+  return /[!&;*]/.test(s) || /\[#/.test(s) || /\$\(/.test(s);
+}
+
 /* ---------- 主入口 ---------- */
 async function runStructureSearch(){
   if (!RDKit){ alert('化学结构引擎尚未就绪，请稍候重试'); return; }
   const mode = document.querySelector('input[name="structMode"]:checked').value;
-  const input = await getStructQuery();
-  if (!input){ alert('请先在画板绘制，或在文本框粘贴 SMILES / SMARTS'); return; }
+  const raw = await getStructQuery();
+  if (!raw){ alert('请先在画板绘制，或在文本框粘贴 SMILES / SMARTS'); return; }
+  const isSmarts = looksLikeSMARTS(raw);
+  const input = isSmarts ? raw : normalizeSmiles(raw);   // SMILES 经 RDKit 归一化(统一芳香性)
   const t0 = performance.now();
   setStructStatus('正在解析结构…');
   SIM_MAP_RESET();
   let qmol = null, qfpSet = null, QH = 0, QE = null;
   try {
     if (mode === 'similar'){
+      if (isSmarts){ alert('相似度模式请使用 SMILES（不支持 SMARTS）'); return; }
       qfpSet = smilesToFpSet(input);
       if (!qfpSet){ alert('无法将该输入解析为分子（相似度请用 SMILES）'); return; }
     } else {
