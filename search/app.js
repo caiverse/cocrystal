@@ -81,14 +81,14 @@ async function load(){
   let records = [];
   let manifest = null;
   try {
-    const mres = await fetch('data/products.manifest.json', { cache: 'no-cache' });
+    const mres = await fetch('data/products.manifest.json');
     if (mres.ok) manifest = await mres.json();
   } catch(e){ manifest = null; }
 
   // 加载统计(含产物库默认展示顺序 library_order)
   let STATS = null;
   try {
-    const sres = await fetch('data/stats.json', { cache: 'no-cache' });
+    const sres = await fetch('data/stats.json');
     if (sres.ok) STATS = await sres.json();
   } catch(e){ STATS = null; }
   LIBRARY_ORDER = (STATS && Array.isArray(STATS.library_order)) ? STATS.library_order : [];
@@ -97,14 +97,14 @@ async function load(){
     if (loadingText) loadingText.textContent =
       `正在并行加载 ${manifest.shards.length} 个数据分片，共约 ${(manifest.count/10000).toFixed(1)} 万条…`;
     const parts = await Promise.all(manifest.shards.map(async (name) => {
-      const r = await fetch('data/' + name, { cache: 'no-cache' });
+      const r = await fetch('data/' + name);
       if (!r.ok) throw new Error('分片 ' + name + ' HTTP ' + r.status);
       return r.json();
     }));
     records = [].concat(...parts);
   } else {
     if (loadingText) loadingText.textContent = '正在加载产物库数据…';
-    const res = await fetch('data/products.json', { cache: 'no-cache' });
+    const res = await fetch('data/products.json');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     records = await res.json();
   }
