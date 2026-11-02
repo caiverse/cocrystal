@@ -112,6 +112,7 @@ async function load(){
   DATA = records;
   BLOBS = DATA.map(r => [
     r.n, r.e, r.f, r.s, r.g, r.r, r.a, r.d, r.o, r.c,
+    r.code,                                  // 产品代码(结构哈希短码)纳入检索: 支持按代码查
     r.x ? Object.values(r.x).join(' ') : ''
   ].filter(Boolean).join(' ').toLowerCase());
 
@@ -149,11 +150,15 @@ function search(){
   const q = document.getElementById('search').value.trim().toLowerCase();
   const cat = document.getElementById('catFilter').value;
   const terms = q.split(/\s+/).filter(Boolean);
+  const isCodeQuery = q.startsWith('cc-');   // 以 CC- 开头视为产品代码精确/前缀检索
   const out = [];
   for (let i = 0; i < DATA.length; i++){
     if (cat && DATA[i].g !== cat) continue;
     let ok = true;
-    if (terms.length){
+    if (isCodeQuery){
+      const code = (DATA[i].code || '').toLowerCase();
+      if (!code.startsWith(q)) ok = false;          // 完整码=精确命中, 部分码=前缀命中
+    } else if (terms.length){
       const blob = BLOBS[i];
       for (const t of terms){ if (!blob.includes(t)){ ok = false; break; } }
     }
@@ -163,8 +168,9 @@ function search(){
   applySort();
   page = 0;
   const dt = (performance.now() - t0).toFixed(0);
+  const modeHint = isCodeQuery ? '（按产品代码精确检索）' : '';
   document.getElementById('status').innerHTML =
-    '匹配 <b>' + FILTERED.length.toLocaleString() + '</b> 条 · 用时 ' + dt + ' ms';
+    '匹配 <b>' + FILTERED.length.toLocaleString() + '</b> 条 · 用时 ' + dt + ' ms' + modeHint;
   render();
 }
 
@@ -223,6 +229,11 @@ function cardHTML(r){
   const simHTML = (sim != null) ? `<div class="sim">相似度 ${Math.round(sim * 100)}%</div>` : '';
   const tags = [`<span class="tag">${escapeHTML(r.g)}</span>`];
   if (r.o) tags.push(`<span class="tag">母体 ${escapeHTML(r.o)}</span>`);
+  const codeHTML = r.code
+    ? `<div class="pcode" title="点击复制产品代码" data-code="${escapeHTML(r.code)}">`
+      + `<span class="pk">产品代码</span><code>${escapeHTML(r.code)}</code>`
+      + `<span class="pcopy">复制</span></div>`
+    : '';
   const reagents = r.a ? `<div class="kv"><span class="k">试剂</span><span>${escapeHTML(r.a)}</span></div>` : '';
   const ccdc = r.d ? `<div class="ccdc">CCDC：${escapeHTML(r.d)}</div>` : '';
   let extra = '';
@@ -238,6 +249,7 @@ function cardHTML(r){
     <div class="cname">${cnameHTML}</div>
     ${ename}
     ${simHTML}
+    ${codeHTML}
     <div class="crow">${formula}${mw}${cas}</div>
     <div class="tags">${tags.join('')}</div>
     ${reagents}
@@ -319,5 +331,19 @@ window.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('catFilter').addEventListener('change', search);
   document.getElementById('sortField').addEventListener('change', onSortChange);
   document.getElementById('sortDir').addEventListener('change', onSortChange);
+  // 产品代码: 点击卡片上的代码徽标即复制到剪贴板
+  const grid = document.getElementById('grid');
+  grid.addEventListener('click', (e) => {
+    const pc = e.target.closest('.pcode');
+    if (!pc) return;
+    const code = pc.getAttribute('data-code') || '';
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(() => {
+      pc.classList.add('copied');
+      const lbl = pc.querySelector('.pcopy');
+      if (lbl) lbl.textContent = '已复制';
+      setTimeout(() => { pc.classList.remove('copied'); if (lbl) lbl.textContent = '复制'; }, 1100);
+    }).catch(() => {});
+  });
   search();
 });
