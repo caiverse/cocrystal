@@ -82,46 +82,82 @@ function elemSuperset(f, QE){
   return true;
 }
 
-/* ---------- fp.bin 加载（相似度模式按需懒加载） ---------- */
-// 文件格式(与 aggregate.py 写出一致): Uint32 numRecords; 之后每条记录:
+/* ---------- fp 加载（相似度模式按需懒加载） ---------- */
+// 支持两种格式(向后兼容):
+//   1) 切块: 存在 data/fp_chunks.json -> {chunks:[文件名...]} 逐块 fetch 并拼接(规避 GitHub 单文件 100MB 限制);
+//   2) 单文件: data/fp.bin(旧部署) -> 直接加载。
+// 单块/单文件格式(与 aggregate.py 写出一致): Uint32 numRecords; 之后每记录:
 //   Uint16 count + count×Uint16 位索引(升序) —— 交错紧凑排列, 无独立 count 表
 async function loadFP(){
   if (FP_READY) return;
-  setStructStatus('正在加载指纹库 fp.bin（约 80MB，首次较慢）…');
+  setStructStatus('正在加载指纹库（约 100MB，首次较慢）…');
   const t0 = performance.now();
-  const res = await fetch('data/fp.bin', {cache: 'no-cache'});
-  const buf = await res.arrayBuffer();
-  const dv = new DataView(buf);
-  FP_N = dv.getUint32(0, true);
-  // 第一遍: 走一遍记录边界, 建每条记录的位区间 offsets, 并统计总位数
+  // 1) 确定分块文件清单(优先切块清单, 否则回退单文件 fp.bin)
+  let chunkFiles = ['fp.bin'];
+  try {
+    const cm = await fetch('data/fp_chunks.json', {cache: 'no-cache'});
+    if (cm.ok){
+      const meta = await cm.json();
+      if (meta && Array.isArray(meta.chunks) && meta.chunks.length) chunkFiles = meta.chunks;
+    }
+  } catch(e){ /* 回退单文件 */ }
+  // 2) 逐块加载, 解析出每块的 每记录位数边界 与 全部位
+  const chunkOffs = [];     // 每块: Uint32Array(每记录位区间, 长度 n+1)
+  const chunkBits = [];     // 每块: Uint16Array(全部位, 拼接)
+  let totalBits = 0;
+  FP_N = 0;
+  for (let ci = 0; ci < chunkFiles.length; ci++){
+    const res = await fetch('data/' + chunkFiles[ci], {cache: 'no-cache'});
+    const buf = await res.arrayBuffer();
+    const dv = new DataView(buf);
+    const n = dv.getUint32(0, true);
+    FP_N += n;
+    const offs = new Uint32Array(n + 1);
+    let p = 4, tot = 0;
+    for (let i = 0; i < n; i++){
+      const c = dv.getUint16(p, true); p += 2;
+      offs[i] = tot;
+      tot += c;
+      for (let j = 0; j < c; j++){ p += 2; }
+    }
+    // 真正取位(单独一遍, 避免边读边数导致重复跳转)
+    const bits = new Uint16Array(tot);
+    let q = 0;
+    p = 4;
+    for (let i = 0; i < n; i++){
+      const c = dv.getUint16(p, true); p += 2;
+      for (let j = 0; j < c; j++){ bits[q++] = dv.getUint16(p, true); p += 2; }
+    }
+    offs[n] = tot;
+    if (p !== buf.byteLength){
+      console.warn(chunkFiles[ci] + ' 尾部校验不符: p=' + p + ' size=' + buf.byteLength + '（继续但结果可能不完整）');
+    }
+    chunkOffs.push(offs);
+    chunkBits.push(bits);
+    totalBits += tot;
+    if (STRUCT_ABORT) throw new Error(ABORT_ERR);
+  }
+  // 3) 拼接为全局 FP_OFFSETS / FP_BITS(与单文件格式一致, 供相似度计算)
   FP_OFFSETS = new Uint32Array(FP_N + 1);
-  let total = 0, p = 4;
-  for (let i = 0; i < FP_N; i++){
-    FP_OFFSETS[i] = total;
-    const c = dv.getUint16(p, true);
-    p += 2 + c * 2;
-    total += c;
-  }
-  FP_OFFSETS[FP_N] = total;
-  if (p !== buf.byteLength){
-    console.warn('fp.bin 尾部校验不符: p=' + p + ' size=' + buf.byteLength + '（继续但结果可能不完整）');
-  }
-  // 第二遍: 填充位数据
-  FP_BITS = new Uint16Array(total);
-  p = 4;
-  let last = performance.now();
-  for (let i = 0; i < FP_N; i++){
-    const c = dv.getUint16(p, true); p += 2;
-    const base = FP_OFFSETS[i];
-    for (let j = 0; j < c; j++){ FP_BITS[base + j] = dv.getUint16(p, true); p += 2; }
-    if ((i & 65535) === 65535){
+  FP_BITS = new Uint16Array(totalBits);
+  let gi = 0, w = 0, off = 0;
+  for (let ci = 0; ci < chunkOffs.length; ci++){
+    const offs = chunkOffs[ci];
+    const bits = chunkBits[ci];
+    const n = offs.length - 1;
+    for (let i = 0; i < n; i++){
+      FP_OFFSETS[gi++] = off;
+      off += offs[i + 1] - offs[i];
+    }
+    FP_BITS.set(bits, w); w += bits.length;
+    if ((gi & 65535) === 65535){
       if (STRUCT_ABORT) throw new Error(ABORT_ERR);
-      const now = performance.now();
-      if (now - last >= 24){ await new Promise(r => setTimeout(r, 0)); last = performance.now(); }
+      await new Promise(r => setTimeout(r, 0));
     }
   }
+  FP_OFFSETS[FP_N] = off;
   FP_READY = true;
-  console.log('fp.bin 加载', (performance.now() - t0).toFixed(0), 'ms, 记录', FP_N, ', 位总数', total);
+  console.log('fp 加载', (performance.now() - t0).toFixed(0), 'ms, 分块', chunkFiles.length, ', 记录', FP_N, ', 位总数', totalBits);
 }
 
 /* ---------- SMILES 归一化 & SMARTS 识别 ---------- */

@@ -1,1 +1,0 @@
-{"radius":2,"fpSize":2048,"numRecords":780854,"rdkit":"2026.09.1","format":"uint32 n + per-record(uint16 count, count*uint16 bits)"}
