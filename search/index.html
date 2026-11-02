@@ -46,34 +46,30 @@
     <span class="subtitle">子结构 / 完全相同 / 相似度 Top-N · 纯前端（RDKit WASM），全库 78 万条</span>
   </div>
   <div class="struct-controls">
-    <div class="struct-left">
-      <button id="btnLoadKetcher" class="btn">加载画板（Ketcher 在线绘制）</button>
-      <div id="ketcherStatus" class="ketcher-status"></div>
-      <div id="ketcherFrameWrap" class="ketcher-wrap"></div>
-      <textarea id="structInput" class="struct-input" placeholder="或直接粘贴 SMILES / SMARTS（如 c1ccccc1、c1ccncc1、CC(=O)O）。绘制或粘贴后点“运行结构检索”。"></textarea>
-      <div class="ex-row">
-        <span>示例：</span>
-        <button class="exSmiles" data-smiles="c1ccccc1">苯环</button>
-        <button class="exSmiles" data-smiles="c1ccncc1">吡啶</button>
-        <button class="exSmiles" data-smiles="c1ccoc1">呋喃</button>
-        <button class="exSmiles" data-smiles="c1csc1">噻吩</button>
-        <button class="exSmiles" data-smiles="C(=O)O">羧基</button>
-        <button class="exSmiles" data-smiles="CC(=O)Oc1ccccc1C(=O)O">阿司匹林</button>
-        <button class="exSmiles" data-smiles="c1ccc2[nH]c(=O)[nH]c2c1">嘌呤二酮</button>
-      </div>
+    <button id="btnLoadKetcher" class="btn">加载画板（Ketcher 在线绘制）</button>
+    <div id="ketcherStatus" class="ketcher-status"></div>
+    <div id="ketcherFrameWrap" class="ketcher-wrap"></div>
+    <textarea id="structInput" class="struct-input" placeholder="或直接粘贴 SMILES / SMARTS（如 c1ccccc1、c1ccncc1、CC(=O)O）。绘制或粘贴后点“运行结构检索”。"></textarea>
+    <div class="ex-row">
+      <span>示例：</span>
+      <button class="exSmiles" data-smiles="c1ccccc1">苯环</button>
+      <button class="exSmiles" data-smiles="c1ccncc1">吡啶</button>
+      <button class="exSmiles" data-smiles="c1ccoc1">呋喃</button>
+      <button class="exSmiles" data-smiles="c1csc1">噻吩</button>
+      <button class="exSmiles" data-smiles="C(=O)O">羧基</button>
+      <button class="exSmiles" data-smiles="CC(=O)Oc1ccccc1C(=O)O">阿司匹林</button>
+      <button class="exSmiles" data-smiles="c1ccc2[nH]c(=O)[nH]c2c1">嘌呤二酮</button>
     </div>
-    <div class="struct-right">
-      <div class="mode-row">
-        <label><input type="radio" name="structMode" value="sub" checked> 子结构</label>
-        <label><input type="radio" name="structMode" value="exact"> 完全相同</label>
-        <label><input type="radio" name="structMode" value="similar"> 相似度</label>
-        <span id="structTopNWrap" class="topn" style="display:none">Top-N <input id="structTopN" type="number" min="1" max="500" value="50"></span>
-      </div>
-      <button id="btnStructRun" class="btn btn-primary">运行结构检索</button>
-      <div id="structStatus" class="struct-status"></div>
-      <div class="progress"><div id="structProgressBar" class="progress-bar"></div></div>
-      <div class="hint">提示：子结构对“宽泛查询”（如裸苯环）命中多、耗时较长；母核/取代片段越具体越快。完全相同＝同分子式且图同构；相似度基于 Morgan 指纹 Tanimoto。</div>
+    <div class="mode-row">
+      <label><input type="radio" name="structMode" value="sub" checked> 子结构</label>
+      <label><input type="radio" name="structMode" value="exact"> 完全相同</label>
+      <label><input type="radio" name="structMode" value="similar"> 相似度</label>
+      <span id="structTopNWrap" class="topn" style="display:none">Top-N <input id="structTopN" type="number" min="1" max="500" value="50"></span>
     </div>
+    <button id="btnStructRun" class="btn btn-primary">运行结构检索</button>
+    <div id="structStatus" class="struct-status"></div>
+    <div class="progress"><div id="structProgressBar" class="progress-bar"></div></div>
+    <div class="hint">提示：子结构对"宽泛查询"（如裸苯环）命中多、耗时较长；母核/取代片段越具体越快。完全相同＝同分子式且图同构；相似度基于 Morgan 指纹 Tanimoto。</div>
   </div>
 </section>
 
