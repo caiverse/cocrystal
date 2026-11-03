@@ -4,7 +4,7 @@
 渲染：RDKit 2D 结构图（矢量 SVG，清晰可缩放）。
 产物：side-structures/struct_NN.svg  +  rails.js（数据+构建逻辑，纯前端、无 fetch 依赖）。
 """
-import os, re, json, glob
+import os, re, json, glob, random
 from rdkit import Chem
 from rdkit.Chem import Draw
 from rdkit.Chem.Draw import rdMolDraw2D
@@ -66,39 +66,46 @@ for sh in shards:
         # 延迟解析：仅记录，渲染时再验证
         cat_pool[g].append((s, it.get("n", ""), it.get("code", "")))
 
-# 选 12 个：优先多样类别；每类取重原子数在 [14,36] 之间的较好看样本
+# 选取模式：每类随机抽 1 个（重原子数 12~38 区间内随机；区间外则退取该类任意一条）
+# SEED = None  -> 每次重跑都随机换一批（常看常新）
+# SEED = 整数  -> 结果固定可复现（例如 20261104）
+SEED = None
+rng = random.Random(SEED)
+
 def hatoms(s):
     m = Chem.MolFromSmiles(s)
     return m.GetNumHeavyAtoms() if m else 0
 
+def pick_random(g):
+    # 优先在 12~38 重原子区间内随机；无合适者则取该类别任意一条
+    cands = [(s, n, code) for (s, n, code) in cat_pool[g] if 12 <= hatoms(s) <= 38]
+    if not cands:
+        cands = cat_pool[g]
+    return rng.choice(cands) if cands else None
+
 picked = []
 used_cats = []
-# 第一轮：每类 1 个（取该类中重原子数最靠近 22 的）
+# 第一轮：每类随机 1 个（类别按频次从高到低取前 16 个库）
 for g in sorted(cat_pool, key=lambda k: -cat_count.get(k, 0)):
     if len(picked) >= 16:
         break
-    best = None; bestscore = 1e9
-    for (s, n, code) in cat_pool[g]:
-        h = hatoms(s)
-        if h < 12 or h > 38:
-            continue
-        sc = abs(h - 22)
-        if sc < bestscore:
-            bestscore = sc; best = (s, n, code)
-    if best:
-        picked.append((g,) + best); used_cats.append(g)
+    r = pick_random(g)
+    if r:
+        picked.append((g,) + r); used_cats.append(g)
 
-# 第二轮：若不足 12，再从已有类别补，凑满
+# 第二轮：若不足 16，再从已有类别随机补，凑满
 if len(picked) < 16:
     for g in used_cats:
         if len(picked) >= 16:
             break
-        for (s, n, code) in cat_pool[g]:
-            if (g, s, n, code) in [(p[0], p[1], p[2], p[3]) for p in picked]:
-                continue
-            h = hatoms(s)
-            if 12 <= h <= 38:
-                picked.append((g, s, n, code)); break
+        seen = {(p[0], p[1], p[2], p[3]) for p in picked}
+        cands = [(s, n, code) for (s, n, code) in cat_pool[g]
+                 if 12 <= hatoms(s) <= 38 and (g, s, n, code) not in seen]
+        if not cands:
+            cands = [(s, n, code) for (s, n, code) in cat_pool[g]
+                     if (g, s, n, code) not in seen]
+        if cands:
+            picked.append((g,) + rng.choice(cands))
 
 # 渲染
 rails = []
