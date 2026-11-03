@@ -15,7 +15,7 @@
 
 <header>
   <div class="title-row">
-    <img class="brandlogo" src="assets/logo-compact.svg" alt="长沙共晶科技有限公司" width="640" height="180">
+    <img class="brandlogo" src="assets/logo-compact-sm.svg" alt="长沙共晶科技有限公司" width="520" height="120">
     <h1>产物库检索站</h1>
     <span class="subtitle">关键词 / 分子式 / CAS / 产品代码 / 试剂 / CCDC 一键检索 · 结构式实时绘制</span>
   </div>
@@ -45,7 +45,7 @@
 <section class="struct-panel">
   <div class="struct-head">
     <h2>结构检索</h2>
-    <span class="subtitle">子结构 / 完全相同 / 相似度 Top-N · 纯前端（RDKit WASM），全库 110 万条</span>
+    <span class="subtitle">子结构 / 完全相同 / 相似度 Top-N · 纯前端（RDKit WASM），全库 <span id="allWan">110 万</span> 条</span>
   </div>
   <div class="struct-controls">
     <button id="btnLoadKetcher" class="btn">加载画板（Ketcher 在线绘制）</button>
@@ -83,7 +83,7 @@
 </div>
 
 <div class="foot">
-  <div>数据来源：92 个产物库（按 87 个分类聚合，共 1,067,712 条），全部带结构 SMILES；结构式由 RDKit 本地渲染，支持砷/金属等杂元素。</div>
+  <div id="srcInfo">数据来源：93 个产物库与原料库（89 个产物库 + 4 个原料库，按 88 个分类聚合，共 1,101,322 条），全部带结构 SMILES；结构式由 RDKit 本地渲染，支持砷/金属等杂元素。</div>
   <div>检索字段：产物名称、英文名、分子式、SMILES、产品代码（CC- 开头，点卡片可复制）、反应分类、来源库、所用试剂、CCDC 编号。多关键词空格分隔为「与」关系。</div>
   <div><b>结构检索</b>：在上方“结构检索”面板用画板绘制或粘贴 SMILES/SMARTS，支持子结构、完全相同、相似度 Top-N 三种模式，结果同样展示于下方卡片网格。</div>
 </div>
@@ -91,5 +91,26 @@
 <script src="lib/rdkit/RDKit_minimal.js"></script>
 <script src="app.js"></script>
 <script src="structsearch.js"></script>
+<script>
+// 产物库统计：运行时读取 data/stats.json + data/products.manifest.json，改库后自动更新
+// 总数以 manifest.count(分片清单, 聚合/去重都会更新)为准；库构成取 stats.json
+(function(){
+  function fill(st,man){
+    var libs=st.by_library||{}, totalLibs=Object.keys(libs).length;
+    var n=(man&&man.count!=null)?man.count:(st.total||0);
+    var nReag=(st.n_reagent!=null)?st.n_reagent:Object.keys(libs).filter(function(k){return k.indexOf('清单')>=0;}).length;
+    var nProd=(st.n_product!=null)?st.n_product:(totalLibs-nReag);
+    var nCat=st.by_category?Object.keys(st.by_category).length:0;
+    var a=document.getElementById('srcInfo');
+    if(a) a.textContent='数据来源：'+totalLibs+' 个产物库与原料库（'+nProd+' 个产物库 + '+nReag+' 个原料库，按 '+nCat+' 个分类聚合，共 '+n.toLocaleString()+' 条），全部带结构 SMILES；结构式由 RDKit 本地渲染，支持砷/金属等杂元素。';
+    var b=document.getElementById('allWan');
+    if(b) b.textContent=(n/10000).toFixed(0)+' 万';
+  }
+  Promise.all([
+    fetch('data/stats.json').then(function(r){return r.json();}),
+    fetch('data/products.manifest.json').then(function(r){return r.json();}).catch(function(){return null;})
+  ]).then(function(a){fill(a[0],a[1]);}).catch(function(){});
+})();
+</script>
 </body>
 </html>

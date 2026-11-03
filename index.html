@@ -24,7 +24,7 @@
     border-bottom:1px solid var(--border)}
   .nav{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:14px 20px;position:relative}
   .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--text);font-size:1.05rem;text-decoration:none}
-  .brand img{height:42px;width:auto;display:block}
+  .brand img{height:38px;width:auto;display:block}
   .menu{display:flex;gap:22px}
   .menu a{color:var(--muted);text-decoration:none;font-size:.95rem}
   .menu a:hover{color:var(--accent)}
@@ -74,7 +74,7 @@
   .searchframe{width:100%;height:82vh;min-height:520px;border:1px solid var(--border);border-radius:14px;background:#fff}
   @media(max-width:640px){
     .hero{padding:60px 16px}.hero h1{font-size:1.9rem}.container{padding:32px 16px}
-    .brand img{height:34px}
+    .brand img{height:30px}
     .hamburger{display:block}
     .menu{display:none;position:absolute;top:100%;right:0;background:#fff;border:1px solid var(--border);
       border-radius:0 0 12px 12px;flex-direction:column;gap:0;min-width:170px;padding:6px 0}
@@ -108,7 +108,7 @@
 -->
 <header class="topbar">
   <nav class="nav">
-    <a class="brand" href="#top"><img src="logo-compact.svg" alt="长沙共晶科技有限公司" width="640" height="180"></a>
+    <a class="brand" href="#top"><img src="logo-compact-sm.svg" alt="长沙共晶科技有限公司" width="520" height="120"></a>
     <button class="hamburger" id="hburger" aria-label="菜单">☰</button>
     <div class="menu" id="menu">
       <a href="#products">产品展示</a>
@@ -165,7 +165,7 @@
   </section>
   <section id="search">
     <h2>产物库检索</h2>
-    <p class="note">收录工作区 84 个产物库 + 4 个原料库，共 1,101,322 条化合物（已逐条比对 CSD，重复结构一律剔除；未被收录者 CCDC 结论统一标注“未被收录”），支持关键词 / 分子式 / CAS / 试剂 / CCDC 一键检索、结构式实时绘制。</p>
+    <p class="note" id="searchNote">收录工作区 89 个产物库 + 4 个原料库，共 1,101,322 条化合物（已逐条比对 CSD，重复结构一律剔除；未被收录者 CCDC 结论统一标注“未被收录”），支持关键词 / 分子式 / CAS / 试剂 / CCDC 一键检索、结构式实时绘制。</p>
     <iframe src="search/" title="产物库检索站" loading="lazy" class="searchframe"></iframe>
   </section>
   <section id="contact">
@@ -253,6 +253,28 @@
     renderCats(); apply();
   }).catch(function(){ /* 保留内置兜底数据 */ });
   psearch.addEventListener('input',apply);
+
+  // 产物库统计：运行时读取 stats.json + products.manifest.json，改库后自动更新，无需再手改数字
+  // 总数以 manifest.count(分片清单, 聚合/去重都会更新)为准；库构成取 stats.json
+  (function(){
+    var el=document.getElementById('searchNote'); if(!el) return;
+    var bases=['search/data/','../product_search/data/','product_search/data/','data/'];
+    function put(st,man){
+      var libs=st.by_library||{}, totalLibs=Object.keys(libs).length;
+      var n=(man&&man.count!=null)?man.count:(st.total||0);
+      var nReag=(st.n_reagent!=null)?st.n_reagent:Object.keys(libs).filter(function(k){return k.indexOf('清单')>=0;}).length;
+      var nProd=(st.n_product!=null)?st.n_product:(totalLibs-nReag);
+      el.textContent='收录工作区 '+nProd+' 个产物库 + '+nReag+' 个原料库，共 '+n.toLocaleString()+' 条化合物（已逐条比对 CSD，重复结构一律剔除；未被收录者 CCDC 结论统一标注“未被收录”），支持关键词 / 分子式 / CAS / 试剂 / CCDC 一键检索、结构式实时绘制。';
+    }
+    (function next(i){
+      if(i>=bases.length) return;
+      var b=bases[i];
+      Promise.all([
+        fetch(b+'stats.json').then(function(r){return r.json();}),
+        fetch(b+'products.manifest.json').then(function(r){return r.json();}).catch(function(){return null;})
+      ]).then(function(a){put(a[0],a[1]);}).catch(function(){next(i+1);});
+    })(0);
+  })();
 </script>
 </body>
 </html>
