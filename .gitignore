@@ -1,0 +1,5 @@
+# 审计/清理过程中产生的中间文件, 不进版本库
+search/_backup_*/
+search/data/_audit*
+search/data/_csddup*
+search/data/_delete*
