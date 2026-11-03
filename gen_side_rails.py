@@ -6,8 +6,9 @@
 """
 import os, re, json, glob, random
 from rdkit import Chem
-from rdkit.Chem import Draw
+from rdkit.Chem import Draw, rdCoordGen
 from rdkit.Chem.Draw import rdMolDraw2D
+from rdkit.Geometry import Point3D
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUTDIR = os.path.join(ROOT, "side-structures")
@@ -23,12 +24,31 @@ def render(smiles, path):
         Chem.SanitizeMol(m)
     except Exception:
         return False
+    # 新版 2D 坐标生成器：布局更规范、取向更统一（避免旧版默认坐标的随机/歪斜取向）
+    rdCoordGen.AddCoords(m)
+    if m.GetConformer() is None:
+        return False
+    # 归一化：居中对齐 + 统一缩放，使所有结构重心居中、视觉大小一致、不贴边
+    conf = m.GetConformer()
+    xs = [conf.GetAtomPosition(i).x for i in range(m.GetNumAtoms())]
+    ys = [conf.GetAtomPosition(i).y for i in range(m.GetNumAtoms())]
+    if not xs:
+        return False
+    minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
+    w, h = maxx - minx, maxy - miny
+    if max(w, h) < 1e-6:
+        return False
+    cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+    scale = 200.0 / max(w, h)          # 统一归一化到约 200 坐标单位
+    for i in range(m.GetNumAtoms()):
+        p = conf.GetAtomPosition(i)
+        conf.SetAtomPosition(i, Point3D((p.x - cx) * scale, (p.y - cy) * scale, 0.0))
     opts = Draw.MolDrawOptions()
     opts.bondLineWidth = 1.8
     opts.minFontSize = 15
     opts.maxFontSize = 24
     opts.useBWAtomPalette = False
-    opts.scalingFactor = 1.05
+    opts.scalingFactor = 1.0
     d = rdMolDraw2D.MolDraw2DSVG(W, H)
     d.SetDrawOptions(opts)
     d.DrawMolecule(m)
