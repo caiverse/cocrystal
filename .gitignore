@@ -3,3 +3,6 @@ search/_backup_*/
 search/data/_audit*
 search/data/_csddup*
 search/data/_delete*
+
+# 构建中断残留的临时指纹, 不进版本库
+search/data/*.tmp
