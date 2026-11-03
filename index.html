@@ -54,7 +54,8 @@
   .catbtn{padding:7px 16px;border:1px solid var(--border);background:var(--bg);border-radius:999px;
     font-size:.9rem;color:var(--muted);cursor:pointer;transition:.2s}
   .catbtn.active,.catbtn:hover{border-color:var(--accent);color:var(--accent);background:#fff}
-  .pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+  .pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:640px){.pgrid{grid-template-columns:1fr}}
   .pcard{background:var(--bg);border:1px solid var(--border);border-radius:14px;padding:20px;transition:.2s;display:flex;flex-direction:column}
   .pcard:hover{border-color:var(--accent);transform:translateY(-3px)}
   .phead{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
