@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>长沙共晶科技有限公司 | 新型晶态功能材料与药物晶体/共晶研发</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="apple-touch-icon" href="logo.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="长沙共晶科技有限公司">
+<meta property="og:title" content="长沙共晶科技有限公司 | 新型晶态功能材料与药物晶体/共晶研发">
+<meta property="og:description" content="致力于新型晶态功能材料与药物晶体/共晶的设计与研发">
+<meta property="og:image" content="logo.png">
 <style>
   :root{
     --bg:#f5f7fa; --card:#ffffff; --text:#1f2329; --muted:#5b6472;
@@ -17,15 +24,15 @@
     border-bottom:1px solid var(--border)}
   .nav{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;padding:14px 20px;position:relative}
   .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--text);font-size:1.05rem;text-decoration:none}
-  .brand .mark{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),var(--accent2))}
+  .brand img{height:42px;width:auto;display:block}
   .menu{display:flex;gap:22px}
   .menu a{color:var(--muted);text-decoration:none;font-size:.95rem}
   .menu a:hover{color:var(--accent)}
   .hamburger{display:none;background:none;border:none;font-size:1.5rem;color:var(--text);cursor:pointer}
   .hero{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;padding:92px 20px;text-align:center}
   .hero h1{font-size:2.6rem;font-weight:700;letter-spacing:2px;margin-bottom:14px}
-  .hero .sub{font-size:1.18rem;opacity:.96;max-width:820px;margin:0 auto;font-weight:400}
-  .hero .tagline{font-size:.98rem;opacity:.85;margin:14px auto 26px;max-width:680px}
+  .hero .sub{font-size:1.18rem;opacity:.96;max-width:820px;margin:0 auto;font-weight:400;color:#fff}
+  .hero .tagline{font-size:.98rem;opacity:.9;margin:14px auto 26px;max-width:680px;color:#e8f3f5}
   .cta{display:inline-block;padding:12px 26px;background:#fff;color:var(--accent);border-radius:999px;
     text-decoration:none;font-weight:600;transition:.2s}
   .cta:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.15)}
@@ -63,9 +70,11 @@
     border:1px solid var(--border);border-radius:12px;text-decoration:none;color:var(--text);font-weight:500;transition:.2s}
   .contact a:hover{border-color:var(--accent);color:var(--accent)}
   footer{text-align:center;color:var(--muted);font-size:.9rem;padding:34px 20px}
+  footer .flogo{display:block;margin:0 auto 16px;width:min(360px,80%);height:auto}
   .searchframe{width:100%;height:82vh;min-height:520px;border:1px solid var(--border);border-radius:14px;background:#fff}
   @media(max-width:640px){
     .hero{padding:60px 16px}.hero h1{font-size:1.9rem}.container{padding:32px 16px}
+    .brand img{height:34px}
     .hamburger{display:block}
     .menu{display:none;position:absolute;top:100%;right:0;background:#fff;border:1px solid var(--border);
       border-radius:0 0 12px 12px;flex-direction:column;gap:0;min-width:170px;padding:6px 0}
@@ -99,7 +108,7 @@
 -->
 <header class="topbar">
   <nav class="nav">
-    <a class="brand" href="#top"><span class="mark"></span>长沙共晶科技</a>
+    <a class="brand" href="#top"><img src="logo-compact.svg" alt="长沙共晶科技有限公司" width="640" height="180"></a>
     <button class="hamburger" id="hburger" aria-label="菜单">☰</button>
     <div class="menu" id="menu">
       <a href="#products">产品展示</a>
@@ -170,7 +179,7 @@
     <p style="margin-top:16px">欢迎通过邮箱或电话与我们联系，洽谈合作与技术交流。</p>
   </section>
 </main>
-<footer>© <span id="year"></span> 长沙共晶科技有限公司 · Powered by cocrystal.cn</footer>
+<footer><img class="flogo" src="logo.svg" alt="长沙共晶科技有限公司 · COCRYSTAL TECHNOLOGY" width="1200" height="400">© <span id="year"></span> 长沙共晶科技有限公司 · Powered by cocrystal.cn</footer>
 <script>
   document.getElementById('year').textContent=new Date().getFullYear();
   // 移动端汉堡菜单
