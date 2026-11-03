@@ -81,9 +81,37 @@
     .menu.open{display:flex}
     .menu a{padding:11px 20px}
   }
+  /* ===== 首页两侧滚动结构推送（产物库真实结构） ===== */
+  .side-rail{position:fixed;top:72px;bottom:0;width:160px;z-index:5;overflow:hidden;pointer-events:none;
+    background:linear-gradient(180deg,rgba(245,247,250,0),rgba(245,247,250,.7) 10%,rgba(245,247,250,.7) 90%,rgba(245,247,250,0));
+    border-left:1px solid var(--border);border-right:1px solid var(--border)}
+  .side-rail.left{left:0;border-left:none}
+  .side-rail.right{right:0;border-right:none}
+  .side-rail .rail-label{position:relative;z-index:2;text-align:center;font-size:.72rem;letter-spacing:1px;
+    color:var(--muted);padding:9px 4px;background:rgba(255,255,255,.9);border-bottom:1px solid var(--border)}
+  .side-rail .rail-track{display:flex;flex-direction:column;gap:12px;padding:12px 10px;
+    animation:railUp 64s linear infinite;will-change:transform}
+  .side-rail.right .rail-track{animation-name:railDown}
+  .side-rail:hover .rail-track{animation-play-state:paused}
+  .side-rail .rail-card{pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:5px;
+    text-decoration:none;background:#fff;border:1px solid var(--border);border-radius:12px;padding:9px 7px 8px;
+    box-shadow:0 1px 4px rgba(20,40,60,.06);transition:.18s}
+  .side-rail .rail-card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 4px 12px rgba(20,40,60,.12)}
+  .side-rail .rail-card img{width:100%;height:98px;object-fit:contain;display:block}
+  .side-rail .rc-cat{font-size:.62rem;color:var(--accent2);background:#e6f4f1;padding:1px 8px;border-radius:999px;white-space:nowrap}
+  .side-rail .rc-name{font-size:.72rem;line-height:1.25;color:var(--text);text-align:center;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .side-rail .rc-code{font-size:.62rem;color:#9aa3ad;font-family:ui-monospace,Menlo,Consolas,monospace}
+  @keyframes railUp{from{transform:translateY(0)}to{transform:translateY(-50%)}}
+  @keyframes railDown{from{transform:translateY(-50%)}to{transform:translateY(0)}}
+  @media(prefers-reduced-motion:reduce){.side-rail .rail-track{animation:none}}
+  @media(max-width:1400px){.side-rail{display:none}}
 </style>
 </head>
 <body>
+<!-- 两侧滚动结构推送（宽屏 ≥1400px 显示，窄屏自动隐藏） -->
+<aside class="side-rail left"><div class="rail-label">产物库精选</div></aside>
+<aside class="side-rail right"><div class="rail-label">结构速览</div></aside>
 <!--
   ============================================================
   如何部署到 GitHub Pages（让 cocrystal.cn 打开它，免备案 / 免服务器）：
@@ -276,5 +304,6 @@
     })(0);
   })();
 </script>
+<script src="rails.js"></script>
 </body>
 </html>
