@@ -1,4 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-<defs><defs><linearGradient id="SgTS" gradientUnits="userSpaceOnUse" x1="4" y1="2" x2="30" y2="62"><stop offset="0" stop-color="#5FD9C4"/><stop offset="1" stop-color="#15756E"/></linearGradient><linearGradient id="SgBS" gradientUnits="userSpaceOnUse" x1="34" y1="2" x2="60" y2="62"><stop offset="0" stop-color="#83AAE8"/><stop offset="1" stop-color="#1B3F86"/></linearGradient><clipPath id="Sclip"><polygon points="62.0,32.0 47.0,6.0 17.0,6.0 2.0,32.0 17.0,58.0 47.0,58.0"/></clipPath></defs></defs>
-<g clip-path="url(#Sclip)"><rect x="0" y="0" width="32" height="64" fill="url(#SgTS)"/><rect x="32" y="0" width="32" height="64" fill="url(#SgBS)"/><polygon points="2.0,32.0 17.0,6.0 47.0,6.0 32.0,2.0" fill="#FFFFFF" fill-opacity="0.12"/><polygon points="2.0,32.0 17.0,58.0 47.0,58.0 62.0,32.0" fill="#02141C" fill-opacity="0.18"/></g><g stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round" fill="none"><line x1="32.0" y1="32.0" x2="62.0" y2="32.0" stroke-width="2.5"/><line x1="32.0" y1="32.0" x2="47.0" y2="6.0" stroke-width="2.5"/><line x1="32.0" y1="32.0" x2="17.0" y2="6.0" stroke-width="2.5"/><line x1="32.0" y1="32.0" x2="2.0" y2="32.0" stroke-width="2.5"/><line x1="32.0" y1="32.0" x2="17.0" y2="58.0" stroke-width="2.5"/><line x1="32.0" y1="32.0" x2="47.0" y2="58.0" stroke-width="2.5"/><line x1="32.0" y1="14.4" x2="47.2" y2="23.2" stroke-width="2.3"/><line x1="47.2" y1="23.2" x2="47.2" y2="40.8" stroke-width="2.3"/><line x1="47.2" y1="40.8" x2="32.0" y2="49.6" stroke-width="2.3"/><line x1="32.0" y1="49.6" x2="16.8" y2="40.8" stroke-width="2.3"/><line x1="16.8" y1="40.8" x2="16.8" y2="23.2" stroke-width="2.3"/><line x1="16.8" y1="23.2" x2="32.0" y2="14.4" stroke-width="2.3"/><line x1="32.0" y1="32.0" x2="32.0" y2="14.4" stroke-width="0.0"/><line x1="32.0" y1="32.0" x2="47.2" y2="23.2" stroke-width="0.0"/><line x1="32.0" y1="32.0" x2="47.2" y2="40.8" stroke-width="0.0"/><line x1="32.0" y1="32.0" x2="32.0" y2="49.6" stroke-width="0.0"/><line x1="32.0" y1="32.0" x2="16.8" y2="40.8" stroke-width="0.0"/><line x1="32.0" y1="32.0" x2="16.8" y2="23.2" stroke-width="0.0"/></g><circle cx="32.0" cy="32.0" r="2.2" fill="#FFFFFF"/><polygon points="62.0,32.0 47.0,6.0 17.0,6.0 2.0,32.0 17.0,58.0 47.0,58.0" fill="none" stroke="#12262E" stroke-width="2.8" stroke-linejoin="round"/>
+<defs>
+<linearGradient id="g" gradientUnits="userSpaceOnUse" x1="4" y1="2" x2="60" y2="62">
+<stop offset="0" stop-color="#158C87"/><stop offset="1" stop-color="#1B3F86"/></linearGradient>
+</defs>
+<rect x="2" y="2" width="60" height="60" rx="14" fill="url(#g)"/>
+<g fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">
+<polygon points="32,7 42.4,13 42.4,25 32,31 21.6,25 21.6,13"/>
+<line x1="32" y1="19" x2="32" y2="7"/><line x1="32" y1="19" x2="42.4" y2="13"/><line x1="32" y1="19" x2="42.4" y2="25"/>
+<line x1="32" y1="19" x2="32" y2="31"/><line x1="32" y1="19" x2="21.6" y2="25"/><line x1="32" y1="19" x2="21.6" y2="13"/>
+</g>
+<circle cx="32" cy="19" r="2.4" fill="#FFFFFF"/>
+<text x="32" y="52" font-family="'Microsoft YaHei','PingFang SC',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF" text-anchor="middle" letter-spacing="2">共晶</text>
 </svg>
