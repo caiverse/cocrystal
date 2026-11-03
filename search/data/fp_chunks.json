@@ -1,1 +1,1 @@
-{"radius":2,"fpSize":2048,"numRecords":1068048,"rdkit":"2026.09.1","format":"chunked: per-file uint32 n + per-record(uint16 count, count*uint16 bits)","chunks":["fp.0.bin","fp.1.bin"],"counts":[920660,147388]}
+{"radius":2,"fpSize":2048,"numRecords":1102568,"rdkit":"2026.09.1","format":"chunked: per-file uint32 n + per-record(uint16 count, count*uint16 bits)","chunks":["fp.0.bin","fp.1.bin"],"counts":[920660,181908]}
