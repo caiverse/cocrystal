@@ -45,6 +45,7 @@ async function initRDKit(){
   }
   try{
     RDKit = await initRDKitModule({ locateFile: (f) => 'lib/rdkit/' + f });
+    RDKit.prefer_coordgen(true);   // 强制使用新版坐标生成器: 与首页侧栏结构图同一画法(取向规范、自适应居中、大小一致)
     console.log('RDKit 就绪');
     if (DATA.length) render();   // 数据已就绪则重绘当前页结构式
   }catch(e){
