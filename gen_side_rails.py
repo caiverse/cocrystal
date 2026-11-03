@@ -75,7 +75,7 @@ picked = []
 used_cats = []
 # 第一轮：每类 1 个（取该类中重原子数最靠近 22 的）
 for g in sorted(cat_pool, key=lambda k: -cat_count.get(k, 0)):
-    if len(picked) >= 12:
+    if len(picked) >= 16:
         break
     best = None; bestscore = 1e9
     for (s, n, code) in cat_pool[g]:
@@ -89,9 +89,9 @@ for g in sorted(cat_pool, key=lambda k: -cat_count.get(k, 0)):
         picked.append((g,) + best); used_cats.append(g)
 
 # 第二轮：若不足 12，再从已有类别补，凑满
-if len(picked) < 12:
+if len(picked) < 16:
     for g in used_cats:
-        if len(picked) >= 12:
+        if len(picked) >= 16:
             break
         for (s, n, code) in cat_pool[g]:
             if (g, s, n, code) in [(p[0], p[1], p[2], p[3]) for p in picked]:
@@ -121,11 +121,14 @@ js += """
       +'<span class="rc-code">'+(d.code||'')+'</span>';
     return a;
   }
+  var HALF=Math.ceil(RAILS.length/2);
+  var SETS={left:RAILS.slice(0,HALF), right:RAILS.slice(HALF)};
   ['left','right'].forEach(function(side){
     var rail=document.querySelector('.side-rail.'+side); if(!rail) return;
+    var set=SETS[side];
     var track=document.createElement('div'); track.className='rail-track';
-    RAILS.forEach(function(d){ track.appendChild(card(d)); });   // 第一份
-    RAILS.forEach(function(d){ track.appendChild(card(d)); });   // 第二份（无缝循环）
+    set.forEach(function(d){ track.appendChild(card(d)); });   // 第一份
+    set.forEach(function(d){ track.appendChild(card(d)); });   // 第二份（无缝循环）
     rail.appendChild(track);
   });
 })();

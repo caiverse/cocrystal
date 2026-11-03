@@ -36,7 +36,7 @@
   .cta{display:inline-block;padding:12px 26px;background:#fff;color:var(--accent);border-radius:999px;
     text-decoration:none;font-weight:600;transition:.2s}
   .cta:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.15)}
-  .container{max-width:980px;margin:0 auto;padding:48px 20px}
+  .container{max-width:1100px;margin:0 auto;padding:48px 20px}
   section{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px;margin-bottom:24px;scroll-margin-top:72px}
   h2{font-size:1.42rem;margin-bottom:18px;color:var(--text);position:relative;padding-left:14px}
   h2::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:4px;border-radius:2px;background:var(--accent)}
@@ -82,7 +82,7 @@
     .menu a{padding:11px 20px}
   }
   /* ===== 首页两侧滚动结构推送（产物库真实结构） ===== */
-  .side-rail{position:fixed;top:72px;bottom:0;width:160px;z-index:5;overflow:hidden;pointer-events:none;
+  .side-rail{position:fixed;top:72px;bottom:0;width:200px;z-index:5;overflow:hidden;pointer-events:none;
     background:linear-gradient(180deg,rgba(245,247,250,0),rgba(245,247,250,.7) 10%,rgba(245,247,250,.7) 90%,rgba(245,247,250,0));
     border-left:1px solid var(--border);border-right:1px solid var(--border)}
   .side-rail.left{left:0;border-left:none}
@@ -105,7 +105,11 @@
   @keyframes railUp{from{transform:translateY(0)}to{transform:translateY(-50%)}}
   @keyframes railDown{from{transform:translateY(-50%)}to{transform:translateY(0)}}
   @media(prefers-reduced-motion:reduce){.side-rail .rail-track{animation:none}}
-  @media(max-width:1400px){.side-rail{display:none}}
+  @media(max-width:1499px){.side-rail{display:none}}
+  /* 宽屏：内容区左右各留等于栏宽的边距，正好填满两栏之间，消除大空隙 */
+  @media(min-width:1500px){
+    .container,.nav{margin-left:200px;margin-right:200px;max-width:none}
+  }
 </style>
 </head>
 <body>
