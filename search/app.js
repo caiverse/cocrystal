@@ -68,14 +68,27 @@ function _prpGetPaths(svg){ const re=/<path\b([^>]*)\/?>/g; const res=[]; let m;
 function _prpAtomsInClass(cls){ const s=new Set(); let m; const re=/atom-(\d+)/g; while((m=re.exec(cls))) s.add(+m[1]); return s; }
 function _prpBondEndpoints(d){ const e=[]; let m; const re=/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/g; while((m=re.exec(d))) e.push([parseFloat(m[1]),parseFloat(m[2])]); return e; }
 function _prpCentroid(d){ const e=_prpBondEndpoints(d); if(!e.length) return null; let sx=0,sy=0; for(const p of e){sx+=p[0];sy+=p[1];} return [sx/e.length, sy/e.length]; }
-function _prpGetAtomPos(paths, k){ // 旋转不变: 取每条入射键"最靠近质心"的端点再平均, 即原子 k 的屏幕坐标
-  const all=[]; const eps=[];
-  for(const p of paths){ if(!p.cls.includes('bond-')) continue; const ix=_prpAtomsInClass(p.cls); if(!ix.has(k)) continue; const e=_prpBondEndpoints(p.d); if(e.length<2) continue; eps.push(e); for(const pt of e) all.push(pt); }
-  if(!eps.length) return null;
-  let cx=0,cy=0; for(const pt of all){cx+=pt[0];cy+=pt[1];} cx/=all.length; cy/=all.length;
-  let sx=0,sy=0,n=0;
-  for(const e of eps){ const d0=(e[0][0]-cx)**2+(e[0][1]-cy)**2, d1=(e[1][0]-cx)**2+(e[1][1]-cy)**2; const ep=d0<=d1?e[0]:e[1]; sx+=ep[0]; sy+=ep[1]; n++; }
-  return n? [sx/n, sy/n] : null;
+function _prpPtSegDist(p,a,b){ // 点到线段距离
+  const vx=b[0]-a[0], vy=b[1]-a[1]; const wx=p[0]-a[0], wy=p[1]-a[1];
+  const c1=vx*wx+vy*wy; if(c1<=0) return Math.hypot(p[0]-a[0],p[1]-a[1]);
+  const c2=vx*vx+vy*vy; if(c2<=c1) return Math.hypot(p[0]-b[0],p[1]-b[1]);
+  const t=c1/c2; return Math.hypot(p[0]-(a[0]+t*vx),p[1]-(a[1]+t*vy));
+}
+function _prpGetAtomPos(paths, k){ // 原子 k = 其所有入射键(线段)的汇聚点(对"键在 midpoint 断开为两段"与"芳香双线偏移"均稳健)
+  const segs=[]; const cands=[];
+  for(const p of paths){
+    if(!p.cls.includes('bond-')) continue;
+    const ix=_prpAtomsInClass(p.cls); if(!ix.has(k)) continue;
+    const e=_prpBondEndpoints(p.d); if(e.length<2) continue;
+    for(let i=0;i+1<e.length;i+=2){ const a=e[i], b=e[i+1]; segs.push([a,b]); cands.push(a); cands.push(b); }
+  }
+  if(!segs.length) return null;
+  const tol=2.5;
+  let best=null,bestScore=0;
+  for(const c of cands){ let score=0; for(const s of segs){ if(_prpPtSegDist(c,s[0],s[1])<=tol) score++; } if(score>bestScore){ bestScore=score; best=c; } }
+  if(!best) return null;
+  let sx=0,sy=0,n=0; for(const q of cands){ if(Math.hypot(best[0]-q[0],best[1]-q[1])<=tol){ sx+=q[0]; sy+=q[1]; n++; } }
+  return n?[sx/n, sy/n] : best;
 }
 function _prpRotateD(d,piv,th){ return d.replace(/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/g,(m,x,y)=>{ const dx=parseFloat(x)-piv[0],dy=parseFloat(y)-piv[1]; const nx=piv[0]+dx*Math.cos(th)-dy*Math.sin(th); const ny=piv[1]+dx*Math.sin(th)+dy*Math.cos(th); return nx.toFixed(2)+','+ny.toFixed(2); }); }
 function _prpAffineD(d, fn){ return d.replace(/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/g,(m,x,y)=>{ const r=fn(parseFloat(x),parseFloat(y)); return r[0].toFixed(2)+','+r[1].toFixed(2); }); }
@@ -87,55 +100,113 @@ function _prpAffineD(d, fn){ return d.replace(/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/
  *     · 联苯/环-环相连(tether 落在另一个候选环内)—— 两环都不转, 避免撕裂环间键;
  *     · 稠合母核(萘/蒽/吖啶)—— 绝不旋转。
  *   这样可在消除"断键/错位"的前提下, 仅对最安全的一类结构做水平化。 */
+/* 悬挂(末端)芳环取向规范化 + 系链加长(两阶段):
+ * 只对「真正悬挂的末端芳环」处理, 判定严格:
+ *   (1) 去掉该环全部原子后, 分子其余部分仍连通(末端/叶子环, 不是中心环);
+ *   (2) 该环不与任何其它环共用原子(排除稠合/螺/桥联环——它们是刚性母核的一部分)。
+ *   处理: 绕其与母核相连的 ipso 刚体旋转到正立(0°/180°); 若带取代基, 再沿系链轴向平移片断以"拉长系链"
+ *         (加长放在缩放居中之后做, 否则被统一缩放抵消)。
+ *   片断 = 环原子 + 沿非系链键 BFS 可达的取代基; 刚体操作, 数学上不断键。 */
 function postRotatePendantRings(svg, blk){
   if(!svg || !blk) return svg;
-  const P=_prpParseV2000(blk); const adj=_prpBuildAdj(P.bondLines,P.nAtoms); const deg=_prpDegree(adj);
+  const P=_prpParseV2000(blk); const adj=_prpBuildAdj(P.bondLines,P.nAtoms);
   const rings=_prpFindRings(adj,P.nAtoms,6);
-  // 候选: 非融合六元环, 且「仅一个外部连接」(无取代基的干净末端环)
-  const cand=[];
-  for(const ring of rings){
-    if(_prpIsFused(ring, rings)) continue;                       // 融合母核绝不旋转
-    const rs=new Set(ring);
-    let ext=[]; for(const a of ring) for(const nb of adj[a]) if(!rs.has(nb)) ext.push(nb);
-    if(ext.length!==1) continue;                                 // 多连接(取代基/联苯中段/内部环)跳过
-    const t=ext[0];
-    cand.push({ring, rs, t});
+  // 原子 -> 所属环索引列表(用于判定"是否共用原子")
+  const atomRings=Array.from({length:P.nAtoms},()=>[]);
+  rings.forEach((r,i)=>{ for(const a of r) atomRings[a].push(i); });
+  const sharesAtom=(ri)=>{ for(const a of rings[ri]) if(atomRings[a].length>1) return true; return false; };
+  // 去掉该环原子后, 其余原子是否仍连通(叶子环判定)。
+  // 容差: 环上取代基(Br/Cl/OH/CF3/NO2 等)被一并摘除后会成为孤立小碎片, 这些不算"骨架断裂"。
+  const SUBST_MAX=5;
+  const isLeaf=(ringAtoms)=>{ const rem=new Array(P.nAtoms).fill(true); for(const a of ringAtoms) rem[a]=false;
+    const rest=[]; for(let i=0;i<P.nAtoms;i++) if(rem[i]) rest.push(i); if(!rest.length) return false;
+    const visited=new Set(); const comps=[];
+    for(const s0 of rest){ if(visited.has(s0)) continue; const comp=[]; const q=[s0]; visited.add(s0);
+      while(q.length){ const u=q.pop(); comp.push(u); for(const nb of adj[u]){ if(rem[nb]&&!visited.has(nb)){ visited.add(nb); q.push(nb); } } }
+      comps.push(comp); }
+    if(!comps.length) return false;
+    comps.sort((a,b)=>b.length-a.length);
+    for(let k=1;k<comps.length;k++){ if(comps[k].length>SUBST_MAX) return false; } // 存在较大的第二分量 -> 骨架被切断 -> 非叶子环
+    return true; };
+  // 估算从 nb 出发、不进入 ca 的可达原子数(挑出连向主核的系链, 区分"连向母核"与"取代基")
+  const reachExcl=(nb, ca)=>{ const seen=new Set([nb]); const st=[nb]; let cnt=0;
+    while(st.length){ const u=st.pop(); cnt++; for(const v of adj[u]){ if(seen.has(v))continue; if(ca.has(v))continue; seen.add(v); st.push(v); } } return cnt; };
+  // 收集可旋转的末端环
+  const jobs=[];
+  for(let ri=0; ri<rings.length; ri++){
+    if(sharesAtom(ri)) continue;        // 稠合/螺/桥联 -> 刚性母核, 不旋转
+    if(!isLeaf(rings[ri])) continue;     // 去掉后其余不连通(中心环) -> 不旋转
+    const ringAtoms=new Set(rings[ri]);
+    // 系链 = 环原子 -> 非环原子的外部键中, 锚点外连可达最多者(区分"连向母核"与"取代基")
+    let tether=null, best=-1;
+    for(const a of rings[ri]){ for(const nb of adj[a]){ if(ringAtoms.has(nb)) continue; const sz=reachExcl(nb, ringAtoms); if(sz>best){ best=sz; tether={ip:a, anchor:nb}; } } }
+    if(!tether) continue;                // 无外部连接(孤立环)跳过
+    // 片断 = 环原子 + 沿非系链键 BFS 可达的取代基
+    const frag=new Set(ringAtoms); const q=[...ringAtoms];
+    while(q.length){ const u=q.pop(); for(const nb of adj[u]){
+      if(frag.has(nb)) continue;
+      if((u===tether.ip&&nb===tether.anchor)||(u===tether.anchor&&nb===tether.ip)) continue; // 仅跳过系链
+      frag.add(nb); q.push(nb); } }
+    if(frag.size > Math.max(8, Math.floor(P.nAtoms*0.6))) continue; // 守卫: 片断过大则跳过, 避免破坏主结构
+    const hasSubst = frag.size > ringAtoms.size;
+    jobs.push({ringIdx:ri, ringAtoms, tether, frag, hasSubst});
   }
-  // 联苯/环-环: 若某候选的 tether 落在另一个候选环内, 两环都不旋转(否则撕裂环间键)
-  const candAtoms=new Set(); for(const c of cand) for(const a of c.ring) candAtoms.add(a);
-  const paths=_prpGetPaths(svg);
-  for(const c of cand){
-    if(candAtoms.has(c.t)) continue;                             // 环-环相连: 跳过
-    let p=-1; for(const a of c.ring) if(adj[a].includes(c.t)){ p=a; break; }
-    if(p<0) continue;
-    // 取 ipso 与其在环上的某邻居构成的「环边」作为对齐基准(边 → 水平 0°/180°, 而非对角 0↔5)
-    const np=adj[p].find(nb=>c.rs.has(nb));
-    if(np<0) continue;
-    const ip=_prpGetAtomPos(paths,p);
-    const npPos=_prpGetAtomPos(paths,np);
-    if(!ip||!npPos) continue;
-    const cur=Math.atan2(npPos[1]-ip[1],npPos[0]-ip[0])*180/Math.PI;   // 当前边角(非对角)
-    // 把边对齐到 0° 或 180°(取离当前角更近的那个, 避免多转); 父核在右(ep.x>ip.x)时选 180°
-    let target=0; const ep=_prpGetAtomPos(paths,c.t);
-    if(ep && ep[0]>ip[0]) target=180; else target=0;
-    let th=(target-cur)*Math.PI/180;
-    if(Math.abs(((th*180/Math.PI+180)%360)-180)<1e-6) continue;  // 已水平, 跳过
-    const M=c.rs;
-    for(const pa of paths){ const ai=_prpAtomsInClass(pa.cls); let rot=false;
-      if(pa.cls.includes('bond-')) rot=ai.size===2&&[...ai].every(x=>M.has(x));      // 普通键: 两原子都在环内才转
-      else if(ai.size===1) rot=M.has([...ai][0]);                                    // 单原子类标签随环转
-      else { const ctd=_prpCentroid(pa.d); if(ctd){ for(const a of M){ const ap=_prpGetAtomPos(paths,a); if(ap && Math.hypot(ctd[0]-ap[0],ctd[1]-ap[1])<16){ rot=true; break; } } } } // 无原子类标签(字形路径): 质心贴近环中原子则随环转
-      if(!rot) continue; const nd=_prpRotateD(pa.d,ip,th); svg=svg.replace(pa.tag, pa.tag.replace(/d='[^']*'/, "d='"+nd+"'")); }
+  const TETHER_FRAC=0.35, TETHER_MAXEXT=8;
+  // 阶段A: 取向(绕 ipso 刚体旋转到水平; 系链旋转阶段不动因为 ipso 固定)
+  { const paths=_prpGetPaths(svg); const ap={}; const getPos=(a)=>{ if(ap[a]!==undefined) return ap[a]; const p=_prpGetAtomPos(paths,a); ap[a]=p||null; return ap[a]; };
+    for(const j of jobs){
+      const {ip, anchor}=j.tether; const ipPos=getPos(ip), anPos=getPos(anchor); if(!ipPos||!anPos) continue;
+      let np=-1; for(const nb of adj[ip]){ if(rings[j.ringIdx].includes(nb)){ np=nb; break; } }
+      if(np<0) continue; const npPos=getPos(np); if(!npPos) continue;
+      const cur=Math.atan2(npPos[1]-ipPos[1], npPos[0]-ipPos[0])*180/Math.PI;
+      const norm=(x)=>{ while(x>180)x-=360; while(x<-180)x+=360; return x; };
+      let target=Math.abs(norm(0-cur))<=Math.abs(norm(180-cur))?0:180;
+      let th=(target-cur)*Math.PI/180;
+      // 翻转判定: 旋转后环质心应位于 anchor 反方向; 否则翻转 180°
+      let sx=0, sy=0, nn=0; for(const a of rings[j.ringIdx]){ const p=getPos(a); if(p){ sx+=p[0]; sy+=p[1]; nn++; } }
+      if(nn){ const vx=sx/nn-ipPos[0], vy=sy/nn-ipPos[1];
+        const rx=vx*Math.cos(th)-vy*Math.sin(th), ry=vx*Math.sin(th)+vy*Math.cos(th);
+        const dA=[anPos[0]-ipPos[0], anPos[1]-ipPos[1]];
+        if(rx*dA[0]+ry*dA[1]>0){ target=(target+180)%360; th=(target-cur)*Math.PI/180; } }
+      const rot=(x,y)=>{ const rx=ipPos[0]+(x-ipPos[0])*Math.cos(th)-(y-ipPos[1])*Math.sin(th);
+        const ry=ipPos[1]+(x-ipPos[0])*Math.sin(th)+(y-ipPos[1])*Math.cos(th); return [rx, ry]; };
+      for(const pa of paths){ const ai=_prpAtomsInClass(pa.cls); const atoms=[...ai];
+        const f0=j.frag.has(atoms[0]), f1=j.frag.has(atoms[1]);
+        if(ai.size===2 && f0!==f1) continue; // 系链旋转阶段不动(ipso 固定)
+        if(!(f0&&f1)) continue;
+        const nd=_prpAffineD(pa.d, rot); svg=svg.replace(pa.tag, pa.tag.replace(/d='[^']*'/, "d='"+nd+"'"));
+      }
+    }
   }
-  /* 旋转后部分原子可能超出原始 250x195 画布 -> 浏览器裁切(断键/残线)。整体缩放居中回原画布, 保证不裁切且显示尺寸稳定 */
-  const _ps=_prpGetPaths(svg); let _mnx=1e9,_mny=1e9,_mxx=-1e9,_myy=-1e9;
-  for(const _p of _ps){ const _e=_prpBondEndpoints(_p.d); for(const _q of _e){ if(_q[0]<_mnx)_mnx=_q[0]; if(_q[0]>_mxx)_mxx=_q[0]; if(_q[1]<_mny)_mny=_q[1]; if(_q[1]>_myy)_myy=_q[1]; } }
-  const _W=250,_H=195,_mg=10;
-  if(!(_mnx>_mxx) && !(_mnx>=_mg && _mxx<=_W-_mg && _mny>=_mg && _myy<=_H-_mg)){
-    const _bw=Math.max(_mxx-_mnx,1e-6), _bh=Math.max(_myy-_mny,1e-6);
-    const _s=Math.min((_W-2*_mg)/_bw,(_H-2*_mg)/_bh);
-    const _tx=(_W-_bw*_s)/2-_mnx*_s, _ty=(_H-_bh*_s)/2-_mny*_s;
-    for(const _p of _ps){ const _nd=_prpAffineD(_p.d,(x,y)=>[_s*x+_tx,_s*y+_ty]); svg=svg.replace(_p.tag, _p.tag.replace(/d='[^']*'/, "d='"+_nd+"'")); }
+  // 整体缩放居中回原画布, 保证不裁切且显示尺寸稳定
+  { const _ps=_prpGetPaths(svg); let _mnx=1e9,_mny=1e9,_mxx=-1e9,_myy=-1e9;
+    for(const _p of _ps){ const _e=_prpBondEndpoints(_p.d); for(const _q of _e){ if(_q[0]<_mnx)_mnx=_q[0]; if(_q[0]>_mxx)_mxx=_q[0]; if(_q[1]<_mny)_mny=_q[1]; if(_q[1]>_myy)_myy=_q[1]; } }
+    const _W=250,_H=195,_mg=10;
+    if(!(_mnx>_mxx) && !(_mnx>=_mg && _mxx<=_W-_mg && _mny>=_mg && _myy<=_H-_mg)){
+      const _bw=Math.max(_mxx-_mnx,1e-6), _bh=Math.max(_myy-_mny,1e-6);
+      const _s=Math.min((_W-2*_mg)/_bw,(_H-2*_mg)/_bh);
+      const _tx=(_W-_bw*_s)/2-_mnx*_s, _ty=(_H-_bh*_s)/2-_mny*_s;
+      for(const _p of _ps){ const _nd=_prpAffineD(_p.d,(x,y)=>[_s*x+_tx,_s*y+_ty]); svg=svg.replace(_p.tag, _p.tag.replace(/d='[^']*'/, "d='"+_nd+"'")); }
+    }
+  }
+  // 阶段B: 加长(缩放居中后, 仅带取代基者)—— 在缩放之后做, 否则被统一缩放抵消
+  { const paths=_prpGetPaths(svg); const ap={}; const getPos=(a)=>{ if(ap[a]!==undefined) return ap[a]; const p=_prpGetAtomPos(paths,a); ap[a]=p||null; return ap[a]; };
+    for(const j of jobs){ if(!j.hasSubst) continue;
+      const {ip, anchor}=j.tether; const ipPos=getPos(ip), anPos=getPos(anchor); if(!ipPos||!anPos) continue;
+      let ux=ipPos[0]-anPos[0], uy=ipPos[1]-anPos[1]; const ulen=Math.hypot(ux,uy)||1; ux/=ulen; uy/=ulen;
+      const ext=Math.min(TETHER_MAXEXT, ulen*TETHER_FRAC); const dx=ux*ext, dy=uy*ext;
+      const tr=(x,y)=>[x+dx, y+dy];
+      for(const pa of paths){ const ai=_prpAtomsInClass(pa.cls); const atoms=[...ai];
+        const f0=j.frag.has(atoms[0]), f1=j.frag.has(atoms[1]);
+        const isTether = ai.size===2 && (f0!==f1);
+        if(isTether){ const a0=atoms[0], a1=atoms[1]; const p0=getPos(a0), p1=getPos(a1); if(!p0||!p1) continue;
+          let mov,fixed; if(j.frag.has(a0)){ mov=tr(p0[0],p0[1]); fixed=p1; } else { mov=tr(p1[0],p1[1]); fixed=p0; }
+          const nd='M '+mov[0].toFixed(2)+' '+mov[1].toFixed(2)+' L '+fixed[0].toFixed(2)+' '+fixed[1].toFixed(2);
+          svg=svg.replace(pa.tag, pa.tag.replace(/d='[^']*'/, "d='"+nd+"'")); continue; }
+        if(!(f0&&f1)) continue;
+        const nd=_prpAffineD(pa.d, tr); svg=svg.replace(pa.tag, pa.tag.replace(/d='[^']*'/, "d='"+nd+"'"));
+      }
+    }
   }
   return svg;
 }
