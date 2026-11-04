@@ -77,6 +77,7 @@ function _prpGetAtomPos(paths, k){ // 旋转不变: 取每条入射键"最靠近
   return n? [sx/n, sy/n] : null;
 }
 function _prpRotateD(d,piv,th){ return d.replace(/(-?\d+\.?\d*),(-?\d+\.?\d*)/g,(m,x,y)=>{ const dx=parseFloat(x)-piv[0],dy=parseFloat(y)-piv[1]; const nx=piv[0]+dx*Math.cos(th)-dy*Math.sin(th); const ny=piv[1]+dx*Math.sin(th)+dy*Math.cos(th); return nx.toFixed(2)+','+ny.toFixed(2); }); }
+function _prpAffineD(d, fn){ return d.replace(/(-?\d+\.?\d*),(-?\d+\.?\d*)/g,(m,x,y)=>{ const r=fn(parseFloat(x),parseFloat(y)); return r[0].toFixed(2)+','+r[1].toFixed(2); }); }
 function postRotatePendantRings(svg, blk){
   if(!svg || !blk) return svg;
   const P=_prpParseV2000(blk); const adj=_prpBuildAdj(P.bondLines,P.nAtoms); const deg=_prpDegree(adj);
@@ -103,6 +104,16 @@ function postRotatePendantRings(svg, blk){
     const th=(target-cur)*Math.PI/180;
     if(Math.abs(((th*180/Math.PI+180)%360)-180)<1e-6) continue;  // 已水平, 跳过
     for(const p of paths){ const ai=_prpAtomsInClass(p.cls); let rot=false; if(p.cls.includes('bond-')) rot=ai.size===2&&[...ai].every(x=>r.S.has(x)); else rot=ai.size===1&&r.S.has([...ai][0]); if(!rot) continue; const nd=_prpRotateD(p.d,ip,th); svg=svg.replace(p.tag, p.tag.replace(/d='[^']*'/, "d='"+nd+"'")); }
+  }
+  /* 旋转后部分原子可能超出原始 250x195 画布 -> 浏览器裁切(断键/残线)。整体缩放居中回原画布, 保证不裁切且显示尺寸稳定 */
+  const _ps=_prpGetPaths(svg); let _mnx=1e9,_mny=1e9,_mxx=-1e9,_myy=-1e9;
+  for(const _p of _ps){ const _e=_prpBondEndpoints(_p.d); for(const _q of _e){ if(_q[0]<_mnx)_mnx=_q[0]; if(_q[0]>_mxx)_mxx=_q[0]; if(_q[1]<_mny)_mny=_q[1]; if(_q[1]>_myy)_myy=_q[1]; } }
+  const _W=250,_H=195,_mg=10;
+  if(!(_mnx>_mxx) && !(_mnx>=_mg && _mxx<=_W-_mg && _mny>=_mg && _myy<=_H-_mg)){
+    const _bw=Math.max(_mxx-_mnx,1e-6), _bh=Math.max(_myy-_mny,1e-6);
+    const _s=Math.min((_W-2*_mg)/_bw,(_H-2*_mg)/_bh);
+    const _tx=(_W-_bw*_s)/2-_mnx*_s, _ty=(_H-_bh*_s)/2-_mny*_s;
+    for(const _p of _ps){ const _nd=_prpAffineD(_p.d,(x,y)=>[_s*x+_tx,_s*y+_ty]); svg=svg.replace(_p.tag, _p.tag.replace(/d='[^']*'/, "d='"+_nd+"'")); }
   }
   return svg;
 }
