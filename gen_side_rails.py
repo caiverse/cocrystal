@@ -4,7 +4,7 @@
 渲染：RDKit 2D 结构图（矢量 SVG，清晰可缩放）。
 产物：side-structures/struct_NN.svg  +  rails.js（数据+构建逻辑，纯前端、无 fetch 依赖）。
 """
-import os, re, json, glob, random, math
+import os, re, json, glob, math
 from rdkit import Chem
 from rdkit.Chem import Draw, rdCoordGen
 from rdkit.Chem.Draw import rdMolDraw2D
@@ -45,6 +45,16 @@ def _bfs_dist(adj, rs, start):
     return d
 
 def normalize_pendant_rings(mol):
+    """让所有"末端(叶)六元环"(仅一个母核连接点、且不与其它六元环融合)取向水平(0°/180°)，
+    并把系链(与母核相连的键)拉长以缓解取代基拥挤；融合母核(吖啶/萘/蒽等)绝不旋转。
+    关键修正(对比旧版):
+      1) 旋转集合 S_rot 只含本环 + 直接取代基, 绝不纳入"另一个环"的原子 —— 旧版会把嵌套的
+         子悬挂环的连结点一起带走, 导致子环被拉歪(出现 114.9°/138.8°/-43.1° 等斜角与变形)。
+      2) 系链拉长改为"整体平移"本悬挂片断(S_trans, 含嵌套子环, 作为刚体), 只拉伸与母核相连的
+         那一根键, 片断内部键与子环取向完全不变。
+      3) 处理顺序 root 先于 leaf, 保证嵌套子环随父环整体平移一次, 不会被重复平移。
+    坐标层面旋转 => 原子标签(由 RDKit 按坐标绘制)始终随原子走, 不会脱附/漂浮。
+    """
     rings = _rings6(mol)
     if not rings or mol.GetConformer() is None:
         return False
@@ -54,48 +64,70 @@ def normalize_pendant_rings(mol):
         i, j = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
         adj[i].append(j); adj[j].append(i)
     deg = [len(adj[i]) for i in range(n)]
+    ringof = {}
+    for ri, r in enumerate(rings):
+        for a in r:
+            ringof.setdefault(a, []).append(ri)
     conf = mol.GetConformer()
     def _xy(i):
         p = conf.GetAtomPosition(i); return p.x, p.y
-    changed = False
-    for ring in rings:
+    pend = []
+    for ri, ring in enumerate(rings):
         if _is_fused(ring, rings):
             continue
         rs = set(ring)
         ext = [nb for a in ring for nb in adj[a] if nb not in rs]
         if len(ext) < 1:
             continue
-        ipso, best = -1, -1
-        for a in ring:
-            c = sum(1 for nb in adj[a] if nb not in rs)
-            if c > best:
-                best = c; ipso = a
-        d = _bfs_dist(adj, rs, ipso)
-        para, pb = -1, -1
-        for a in ring:
-            if d.get(a, 0) > pb:
-                pb = d.get(a, 0); para = a
-        if para < 0:
-            continue
+        ipso = max(ring, key=lambda a: sum(1 for nb in adj[a] if nb not in rs))
         tether = next((x for x in ext if deg[x] > 1), ext[0])
-        S = set(ring)
+        pend.append((ri, ring, ipso, tether))
+    def _is_leaf(t):
+        return any(t[3] in o for o in rings)
+    order = sorted(pend, key=lambda t: 1 if _is_leaf(t) else 0)  # 先处理 root(连母核), 后 leaf
+    changed = False
+    F = 1.25  # 系链拉长系数
+    for ri, ring, ipso, tether in order:
+        rs = set(ring)
+        d = _bfs_dist(adj, rs, ipso)
+        para = max(ring, key=lambda a: d.get(a, 0))
+        # S_rot: 本环 + 直接取代基(非其它环的原子, 且非系链)
+        Srot = set(ring)
         for a in ring:
             for nb in adj[a]:
-                if nb not in rs and nb != tether:
-                    S.add(nb)
+                if nb not in rs and nb != tether and nb not in ringof:
+                    Srot.add(nb)
+        # S_trans: 去掉系链键后的连通片断(本环 + 嵌套子环 + 取代基), 作为整体平移
+        visited = set(ring); stack = list(ring)
+        while stack:
+            a = stack.pop()
+            for nb in adj[a]:
+                if (a == ipso and nb == tether) or (a == tether and nb == ipso):
+                    continue
+                if nb not in visited:
+                    visited.add(nb); stack.append(nb)
+        Str = visited
         ix, iy = _xy(ipso); px, py = _xy(para); tx, ty = _xy(tether)
         cur = math.atan2(py - iy, px - ix) * 180.0 / math.pi
         target = 180.0 if tx > ix else 0.0
         th = (target - cur) * math.pi / 180.0
-        if abs(((th * 180.0 / math.pi + 180) % 360) - 180) < 1e-6:
-            continue
-        cos_t, sin_t = math.cos(th), math.sin(th)
-        for i in S:
-            x, y = _xy(i); dx = x - ix; dy = y - iy
-            nx = ix + dx * cos_t - dy * sin_t
-            ny = iy + dx * sin_t + dy * cos_t
-            conf.SetAtomPosition(i, Point3D(nx, ny, 0.0))
-        changed = True
+        if abs(((th * 180.0 / math.pi + 180) % 360) - 180) >= 1e-6:
+            cos_t, sin_t = math.cos(th), math.sin(th)
+            for i in Srot:
+                x, y = _xy(i); dx = x - ix; dy = y - iy
+                nx = ix + dx * cos_t - dy * sin_t
+                ny = iy + dx * sin_t + dy * cos_t
+                conf.SetAtomPosition(i, Point3D(nx, ny, 0.0))
+            changed = True
+        # 系链拉长: 把整个悬挂片断沿"远离母核"方向平移
+        L0 = math.hypot(ix - tx, iy - ty)
+        if L0 > 1e-6:
+            ux, uy = (ix - tx) / L0, (iy - ty) / L0
+            delta = (F - 1.0) * L0
+            for i in Str:
+                x, y = _xy(i)
+                conf.SetAtomPosition(i, Point3D(x + ux * delta, y + uy * delta, 0.0))
+            changed = True
     return changed
 
 def render(smiles, path):
@@ -150,66 +182,31 @@ def render(smiles, path):
         f.write(svg)
     return True
 
-# ---- 分层抽样：每个类别取 1~2 个「中等大小、结构好看」的候选 ----
-shards = sorted(glob.glob(os.path.join(ROOT, "search", "data", "products.*.json")))[:5]
-cat_pool = {}   # cat -> list of (hatoms, smiles, name, code)
-cat_count = {}
-for sh in shards:
+# ---- 固定 14 条产物库结构（与既有 rails.js 完全一致），仅用修正后的渲染重画 ----
+# 目的：用户已就这 14 个具体结构反馈"滚动栏结构乱"，故保持产物不变、只修正绘制。
+FIXED_CODES = [
+    "CC-2I8zxxJmA", "CC-ELLk2CRoi", "CC-bEuBVoQFS", "CC-mRx17fOXH", "CC-HR8BrrnY5",
+    "CC-GF1TLL42I", "CC-HuU2g06cT", "CC-FVEwrOq5u", "CC-pFKxJ39xQ", "CC-qnIslewtq",
+    "CC-vR1Vdc5SI", "CC-bGmr8GZBT", "CC-NqwQHOIFV", "CC-5EzjVe4QH",
+]
+rec_by_code = {}
+for sh in glob.glob(os.path.join(ROOT, "search", "data", "products.*.json")):
+    if sh.endswith("manifest.json"):
+        continue
     try:
         data = json.load(open(sh, encoding="utf-8"))
     except Exception:
         continue
-    for it in data:
-        s = it.get("s")
-        g = (it.get("g") or "其他").strip()
-        if not s or len(s) > 160:
-            continue
-        cat_count[g] = cat_count.get(g, 0) + 1
-        if g not in cat_pool:
-            cat_pool[g] = []
-        # 延迟解析：仅记录，渲染时再验证
-        cat_pool[g].append((s, it.get("n", ""), it.get("code", "")))
-
-# 选取模式：每类随机抽 1 个（重原子数 12~38 区间内随机；区间外则退取该类任意一条）
-# SEED = None  -> 每次重跑都随机换一批（常看常新）
-# SEED = 整数  -> 结果固定可复现（例如 20261104）
-SEED = None
-rng = random.Random(SEED)
-
-def hatoms(s):
-    m = Chem.MolFromSmiles(s)
-    return m.GetNumHeavyAtoms() if m else 0
-
-def pick_random(g):
-    # 优先在 12~38 重原子区间内随机；无合适者则取该类别任意一条
-    cands = [(s, n, code) for (s, n, code) in cat_pool[g] if 12 <= hatoms(s) <= 38]
-    if not cands:
-        cands = cat_pool[g]
-    return rng.choice(cands) if cands else None
+    if isinstance(data, list):
+        for it in data:
+            if isinstance(it, dict) and it.get("code") in FIXED_CODES:
+                rec_by_code[it["code"]] = it
 
 picked = []
-used_cats = []
-# 第一轮：每类随机 1 个（类别按频次从高到低取前 16 个库）
-for g in sorted(cat_pool, key=lambda k: -cat_count.get(k, 0)):
-    if len(picked) >= 16:
-        break
-    r = pick_random(g)
-    if r:
-        picked.append((g,) + r); used_cats.append(g)
-
-# 第二轮：若不足 16，再从已有类别随机补，凑满
-if len(picked) < 16:
-    for g in used_cats:
-        if len(picked) >= 16:
-            break
-        seen = {(p[0], p[1], p[2], p[3]) for p in picked}
-        cands = [(s, n, code) for (s, n, code) in cat_pool[g]
-                 if 12 <= hatoms(s) <= 38 and (g, s, n, code) not in seen]
-        if not cands:
-            cands = [(s, n, code) for (s, n, code) in cat_pool[g]
-                     if (g, s, n, code) not in seen]
-        if cands:
-            picked.append((g,) + rng.choice(cands))
+for code in FIXED_CODES:
+    r = rec_by_code.get(code)
+    if r and r.get("s"):
+        picked.append((r.get("g", "其他"), r["s"], r.get("n", ""), code))
 
 # 渲染
 rails = []
