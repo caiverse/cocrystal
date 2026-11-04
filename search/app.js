@@ -66,7 +66,8 @@ function _prpDegree(adj){ return adj.map(a=>a.length); }
 function _prpIsFused(ring, rings){ for(const o of rings){ if(o===ring) continue; const os=new Set(o); for(let i=0;i<ring.length;i++){ const a=ring[i], b=ring[(i+1)%ring.length]; if(os.has(a)&&os.has(b)) return true; } } return false; }
 function _prpGetPaths(svg){ const re=/<path\b([^>]*)\/?>/g; const res=[]; let m; while((m=re.exec(svg))){ const tag=m[0]; const cls=(tag.match(/class='([^']*)'/)||[])[1]||''; const d=(tag.match(/d='([^']*)'/)||[])[1]||''; res.push({tag,cls,d}); } return res; }
 function _prpAtomsInClass(cls){ const s=new Set(); let m; const re=/atom-(\d+)/g; while((m=re.exec(cls))) s.add(+m[1]); return s; }
-function _prpBondEndpoints(d){ const e=[]; let m; const re=/(-?\d+\.?\d*),(-?\d+\.?\d*)/g; while((m=re.exec(d))) e.push([parseFloat(m[1]),parseFloat(m[2])]); return e; }
+function _prpBondEndpoints(d){ const e=[]; let m; const re=/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/g; while((m=re.exec(d))) e.push([parseFloat(m[1]),parseFloat(m[2])]); return e; }
+function _prpCentroid(d){ const e=_prpBondEndpoints(d); if(!e.length) return null; let sx=0,sy=0; for(const p of e){sx+=p[0];sy+=p[1];} return [sx/e.length, sy/e.length]; }
 function _prpGetAtomPos(paths, k){ // 旋转不变: 取每条入射键"最靠近质心"的端点再平均, 即原子 k 的屏幕坐标
   const all=[]; const eps=[];
   for(const p of paths){ if(!p.cls.includes('bond-')) continue; const ix=_prpAtomsInClass(p.cls); if(!ix.has(k)) continue; const e=_prpBondEndpoints(p.d); if(e.length<2) continue; eps.push(e); for(const pt of e) all.push(pt); }
@@ -76,8 +77,8 @@ function _prpGetAtomPos(paths, k){ // 旋转不变: 取每条入射键"最靠近
   for(const e of eps){ const d0=(e[0][0]-cx)**2+(e[0][1]-cy)**2, d1=(e[1][0]-cx)**2+(e[1][1]-cy)**2; const ep=d0<=d1?e[0]:e[1]; sx+=ep[0]; sy+=ep[1]; n++; }
   return n? [sx/n, sy/n] : null;
 }
-function _prpRotateD(d,piv,th){ return d.replace(/(-?\d+\.?\d*),(-?\d+\.?\d*)/g,(m,x,y)=>{ const dx=parseFloat(x)-piv[0],dy=parseFloat(y)-piv[1]; const nx=piv[0]+dx*Math.cos(th)-dy*Math.sin(th); const ny=piv[1]+dx*Math.sin(th)+dy*Math.cos(th); return nx.toFixed(2)+','+ny.toFixed(2); }); }
-function _prpAffineD(d, fn){ return d.replace(/(-?\d+\.?\d*),(-?\d+\.?\d*)/g,(m,x,y)=>{ const r=fn(parseFloat(x),parseFloat(y)); return r[0].toFixed(2)+','+r[1].toFixed(2); }); }
+function _prpRotateD(d,piv,th){ return d.replace(/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/g,(m,x,y)=>{ const dx=parseFloat(x)-piv[0],dy=parseFloat(y)-piv[1]; const nx=piv[0]+dx*Math.cos(th)-dy*Math.sin(th); const ny=piv[1]+dx*Math.sin(th)+dy*Math.cos(th); return nx.toFixed(2)+','+ny.toFixed(2); }); }
+function _prpAffineD(d, fn){ return d.replace(/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/g,(m,x,y)=>{ const r=fn(parseFloat(x),parseFloat(y)); return r[0].toFixed(2)+','+r[1].toFixed(2); }); }
 function postRotatePendantRings(svg, blk){
   if(!svg || !blk) return svg;
   const P=_prpParseV2000(blk); const adj=_prpBuildAdj(P.bondLines,P.nAtoms); const deg=_prpDegree(adj);
@@ -103,7 +104,11 @@ function postRotatePendantRings(svg, blk){
     let target=0; const ep=_prpGetAtomPos(paths,r.t); if(ep && ep[0]>ip[0]) target=180; else target=0;
     const th=(target-cur)*Math.PI/180;
     if(Math.abs(((th*180/Math.PI+180)%360)-180)<1e-6) continue;  // 已水平, 跳过
-    for(const p of paths){ const ai=_prpAtomsInClass(p.cls); let rot=false; if(p.cls.includes('bond-')) rot=ai.size===2&&[...ai].every(x=>r.S.has(x)); else rot=ai.size===1&&r.S.has([...ai][0]); if(!rot) continue; const nd=_prpRotateD(p.d,ip,th); svg=svg.replace(p.tag, p.tag.replace(/d='[^']*'/, "d='"+nd+"'")); }
+    for(const p of paths){ const ai=_prpAtomsInClass(p.cls); let rot=false;
+      if(p.cls.includes('bond-')) rot=ai.size===2&&[...ai].every(x=>r.S.has(x));      // 普通键: 两原子都在 S 才转
+      else if(ai.size===1) rot=r.S.has([...ai][0]);                                    // 单原子类(部分标签)
+      else { const c=_prpCentroid(p.d); if(c){ for(const a of r.S){ const ap=_prpGetAtomPos(paths,a); if(ap && Math.hypot(c[0]-ap[0],c[1]-ap[1])<16){ rot=true; break; } } } } // 无原子类标签(空缺 class 的字形路径): 质心贴近 S 中原子则随环一起转
+      if(!rot) continue; const nd=_prpRotateD(p.d,ip,th); svg=svg.replace(p.tag, p.tag.replace(/d='[^']*'/, "d='"+nd+"'")); }
   }
   /* 旋转后部分原子可能超出原始 250x195 画布 -> 浏览器裁切(断键/残线)。整体缩放居中回原画布, 保证不裁切且显示尺寸稳定 */
   const _ps=_prpGetPaths(svg); let _mnx=1e9,_mny=1e9,_mxx=-1e9,_myy=-1e9;
