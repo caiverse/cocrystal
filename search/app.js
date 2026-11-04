@@ -170,10 +170,10 @@ function postRotatePendantRings(svg, blk){
         if(rx*dA[0]+ry*dA[1]>0){ target=(target+180)%360; th=(target-cur)*Math.PI/180; } }
       const rot=(x,y)=>{ const rx=ipPos[0]+(x-ipPos[0])*Math.cos(th)-(y-ipPos[1])*Math.sin(th);
         const ry=ipPos[1]+(x-ipPos[0])*Math.sin(th)+(y-ipPos[1])*Math.cos(th); return [rx, ry]; };
-      for(const pa of paths){ const ai=_prpAtomsInClass(pa.cls); const atoms=[...ai];
-        const f0=j.frag.has(atoms[0]), f1=j.frag.has(atoms[1]);
-        if(ai.size===2 && f0!==f1) continue; // 系链旋转阶段不动(ipso 固定)
-        if(!(f0&&f1)) continue;
+      for(const pa of paths){ const ai=_prpAtomsInClass(pa.cls); if(ai.size===0) continue;
+        const atoms=[...ai];
+        if(ai.size===2 && j.frag.has(atoms[0])!==j.frag.has(atoms[1])) continue; // 系链: 一端在片断内、一端在外 -> ipso 固定不动
+        if(!(atoms.some(a=>j.frag.has(a)))) continue; // 仅当路径涉及的任一原子属于片断才旋转(含单原子标签 N⁺/O⁻/Cl 等字形, 随环一起转)
         const nd=_prpAffineD(pa.d, rot); svg=svg.replace(pa.tag, pa.tag.replace(/d='[^']*'/, "d='"+nd+"'"));
       }
     }
@@ -196,14 +196,14 @@ function postRotatePendantRings(svg, blk){
       let ux=ipPos[0]-anPos[0], uy=ipPos[1]-anPos[1]; const ulen=Math.hypot(ux,uy)||1; ux/=ulen; uy/=ulen;
       const ext=Math.min(TETHER_MAXEXT, ulen*TETHER_FRAC); const dx=ux*ext, dy=uy*ext;
       const tr=(x,y)=>[x+dx, y+dy];
-      for(const pa of paths){ const ai=_prpAtomsInClass(pa.cls); const atoms=[...ai];
-        const f0=j.frag.has(atoms[0]), f1=j.frag.has(atoms[1]);
-        const isTether = ai.size===2 && (f0!==f1);
+      for(const pa of paths){ const ai=_prpAtomsInClass(pa.cls); if(ai.size===0) continue;
+        const atoms=[...ai];
+        const isTether = ai.size===2 && (j.frag.has(atoms[0])!==j.frag.has(atoms[1]));
         if(isTether){ const a0=atoms[0], a1=atoms[1]; const p0=getPos(a0), p1=getPos(a1); if(!p0||!p1) continue;
           let mov,fixed; if(j.frag.has(a0)){ mov=tr(p0[0],p0[1]); fixed=p1; } else { mov=tr(p1[0],p1[1]); fixed=p0; }
           const nd='M '+mov[0].toFixed(2)+' '+mov[1].toFixed(2)+' L '+fixed[0].toFixed(2)+' '+fixed[1].toFixed(2);
           svg=svg.replace(pa.tag, pa.tag.replace(/d='[^']*'/, "d='"+nd+"'")); continue; }
-        if(!(f0&&f1)) continue;
+        if(!(atoms.some(a=>j.frag.has(a)))) continue; // 含单原子标签 N⁺/O⁻/Cl 等字形, 随片断一起平移加长
         const nd=_prpAffineD(pa.d, tr); svg=svg.replace(pa.tag, pa.tag.replace(/d='[^']*'/, "d='"+nd+"'"));
       }
     }
