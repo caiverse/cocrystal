@@ -4,7 +4,7 @@
 渲染：RDKit 2D 结构图（矢量 SVG，清晰可缩放）。
 产物：side-structures/struct_NN.svg  +  rails.js（数据+构建逻辑，纯前端、无 fetch 依赖）。
 """
-import os, re, json, glob, random
+import os, re, json, glob, random, math
 from rdkit import Chem
 from rdkit.Chem import Draw, rdCoordGen
 from rdkit.Chem.Draw import rdMolDraw2D
@@ -15,6 +15,88 @@ OUTDIR = os.path.join(ROOT, "side-structures")
 os.makedirs(OUTDIR, exist_ok=True)
 
 W, H = 300, 240
+
+# ---------- 悬挂(末端)六元环取向规范化: 让所有末端苯环水平(0°/180°), 视觉统一"正" ----------
+# 与线上/离线检索站同一逻辑: RDKit/coordGen 不对单点连接的悬挂环做取向规范化, 导致末端环随取代基
+# 歪斜。此处直接旋转坐标(比 SVG 后处理更干净): 识别"末端六元环"(仅一个母核连接点、且不与其它
+# 六元环融合), 将其绕 ipso 旋转到水平; 融合母核(吖啶/萘/蒽等)绝不旋转。叶取代基(F/CH3…)随环一起转。
+def _rings6(mol):
+    return [tuple(r) for r in mol.GetRingInfo().AtomRings() if len(r) == 6]
+
+def _is_fused(ring, rings):
+    rs = set(ring); n = len(ring)
+    for o in rings:
+        if o == ring:
+            continue
+        os = set(o)
+        for i in range(n):
+            a, b = ring[i], ring[(i + 1) % n]
+            if a in os and b in os:
+                return True
+    return False
+
+def _bfs_dist(adj, rs, start):
+    d = {start: 0}; q = [start]
+    while q:
+        c = q.pop(0)
+        for nb in adj[c]:
+            if nb in rs and nb not in d:
+                d[nb] = d[c] + 1; q.append(nb)
+    return d
+
+def normalize_pendant_rings(mol):
+    rings = _rings6(mol)
+    if not rings or mol.GetConformer() is None:
+        return False
+    n = mol.GetNumAtoms()
+    adj = [[] for _ in range(n)]
+    for b in mol.GetBonds():
+        i, j = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
+        adj[i].append(j); adj[j].append(i)
+    deg = [len(adj[i]) for i in range(n)]
+    conf = mol.GetConformer()
+    def _xy(i):
+        p = conf.GetAtomPosition(i); return p.x, p.y
+    changed = False
+    for ring in rings:
+        if _is_fused(ring, rings):
+            continue
+        rs = set(ring)
+        ext = [nb for a in ring for nb in adj[a] if nb not in rs]
+        if len(ext) < 1:
+            continue
+        ipso, best = -1, -1
+        for a in ring:
+            c = sum(1 for nb in adj[a] if nb not in rs)
+            if c > best:
+                best = c; ipso = a
+        d = _bfs_dist(adj, rs, ipso)
+        para, pb = -1, -1
+        for a in ring:
+            if d.get(a, 0) > pb:
+                pb = d.get(a, 0); para = a
+        if para < 0:
+            continue
+        tether = next((x for x in ext if deg[x] > 1), ext[0])
+        S = set(ring)
+        for a in ring:
+            for nb in adj[a]:
+                if nb not in rs and nb != tether:
+                    S.add(nb)
+        ix, iy = _xy(ipso); px, py = _xy(para); tx, ty = _xy(tether)
+        cur = math.atan2(py - iy, px - ix) * 180.0 / math.pi
+        target = 180.0 if tx > ix else 0.0
+        th = (target - cur) * math.pi / 180.0
+        if abs(((th * 180.0 / math.pi + 180) % 360) - 180) < 1e-6:
+            continue
+        cos_t, sin_t = math.cos(th), math.sin(th)
+        for i in S:
+            x, y = _xy(i); dx = x - ix; dy = y - iy
+            nx = ix + dx * cos_t - dy * sin_t
+            ny = iy + dx * sin_t + dy * cos_t
+            conf.SetAtomPosition(i, Point3D(nx, ny, 0.0))
+        changed = True
+    return changed
 
 def render(smiles, path):
     m = Chem.MolFromSmiles(smiles)
@@ -28,6 +110,8 @@ def render(smiles, path):
     rdCoordGen.AddCoords(m)
     if m.GetConformer() is None:
         return False
+    # 悬挂(末端)六元环取向规范化: 让所有末端苯环水平(0°/180°), 视觉统一"正"
+    normalize_pendant_rings(m)
     # 归一化：居中对齐 + 统一缩放，使所有结构重心居中、视觉大小一致、不贴边
     conf = m.GetConformer()
     xs = [conf.GetAtomPosition(i).x for i in range(m.GetNumAtoms())]

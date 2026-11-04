@@ -54,6 +54,59 @@ async function initRDKit(){
   }
 }
 
+/* ---------- 悬挂(末端)六元环取向规范化: 让所有末端苯环水平(0°/180°), 视觉统一"正" ---------- */
+/* 原理: RDKit/coordgen 不会对单点连接的悬挂环做取向规范化, 导致末端环随取代基位置歪斜。
+   此处不改坐标(WASM 不接受外部 2D 坐标), 改为对 get_svg 产出的 SVG 做后处理: 识别"末端六元环"
+   (仅一个母核连接点、且不与其它六元环融合), 将其绕 ipso 旋转到水平; 融合母核(吖啶/萘/蒽等)绝不旋转。 */
+function _prpParseV2000(blk){ const L=blk.split('\n'); const c=L[3].trim().split(/\s+/).map(Number); const nA=c[0],nB=c[1]; return {nAtoms:nA,nBonds:nB,atomLines:L.slice(4,4+nA),bondLines:L.slice(4+nA,4+nA+nB)}; }
+function _prpBuildAdj(bl,n){ const a=Array.from({length:n},()=>[]); for(const b of bl){const m=b.match(/^\s*(\d+)\s+(\d+)\s+(\d+)/); if(!m)continue; const x=+m[1]-1,y=+m[2]-1; a[x].push(y); a[y].push(x);} return a; }
+function _prpFindRings(adj,n,t){ const rings=[]; for(let s=0;s<n;s++){ const path=[s],ip=new Set([s]); (function dfs(v){ if(path.length===t){ if(adj[v].includes(s)) rings.push([...path]); return;} for(const nb of adj[v]){ if(nb===s||ip.has(nb))continue; ip.add(nb); path.push(nb); dfs(nb); path.pop(); ip.delete(nb);} })(s);} const u=[],seen=new Set(); for(const r of rings){const k=[...r].sort((a,b)=>a-b).join(','); if(!seen.has(k)){seen.add(k);u.push(r);}} return u; }
+function _prpBfsDist(adj,rs,start){ const d={[start]:0},q=[start]; while(q.length){const c=q.shift(); for(const nb of adj[c]) if(rs.has(nb)&&!(nb in d)){d[nb]=d[c]+1;q.push(nb);}} return d; }
+function _prpDegree(adj){ return adj.map(a=>a.length); }
+function _prpIsFused(ring, rings){ for(const o of rings){ if(o===ring) continue; const os=new Set(o); for(let i=0;i<ring.length;i++){ const a=ring[i], b=ring[(i+1)%ring.length]; if(os.has(a)&&os.has(b)) return true; } } return false; }
+function _prpGetPaths(svg){ const re=/<path\b([^>]*)\/?>/g; const res=[]; let m; while((m=re.exec(svg))){ const tag=m[0]; const cls=(tag.match(/class='([^']*)'/)||[])[1]||''; const d=(tag.match(/d='([^']*)'/)||[])[1]||''; res.push({tag,cls,d}); } return res; }
+function _prpAtomsInClass(cls){ const s=new Set(); let m; const re=/atom-(\d+)/g; while((m=re.exec(cls))) s.add(+m[1]); return s; }
+function _prpBondEndpoints(d){ const e=[]; let m; const re=/(-?\d+\.?\d*),(-?\d+\.?\d*)/g; while((m=re.exec(d))) e.push([parseFloat(m[1]),parseFloat(m[2])]); return e; }
+function _prpGetAtomPos(paths, k){ // 旋转不变: 取每条入射键"最靠近质心"的端点再平均, 即原子 k 的屏幕坐标
+  const all=[]; const eps=[];
+  for(const p of paths){ if(!p.cls.includes('bond-')) continue; const ix=_prpAtomsInClass(p.cls); if(!ix.has(k)) continue; const e=_prpBondEndpoints(p.d); if(e.length<2) continue; eps.push(e); for(const pt of e) all.push(pt); }
+  if(!eps.length) return null;
+  let cx=0,cy=0; for(const pt of all){cx+=pt[0];cy+=pt[1];} cx/=all.length; cy/=all.length;
+  let sx=0,sy=0,n=0;
+  for(const e of eps){ const d0=(e[0][0]-cx)**2+(e[0][1]-cy)**2, d1=(e[1][0]-cx)**2+(e[1][1]-cy)**2; const ep=d0<=d1?e[0]:e[1]; sx+=ep[0]; sy+=ep[1]; n++; }
+  return n? [sx/n, sy/n] : null;
+}
+function _prpRotateD(d,piv,th){ return d.replace(/(-?\d+\.?\d*),(-?\d+\.?\d*)/g,(m,x,y)=>{ const dx=parseFloat(x)-piv[0],dy=parseFloat(y)-piv[1]; const nx=piv[0]+dx*Math.cos(th)-dy*Math.sin(th); const ny=piv[1]+dx*Math.sin(th)+dy*Math.cos(th); return nx.toFixed(2)+','+ny.toFixed(2); }); }
+function postRotatePendantRings(svg, blk){
+  if(!svg || !blk) return svg;
+  const P=_prpParseV2000(blk); const adj=_prpBuildAdj(P.bondLines,P.nAtoms); const deg=_prpDegree(adj);
+  const rings=_prpFindRings(adj,P.nAtoms,6);
+  const out=[];
+  for(const ring of rings){
+    if(_prpIsFused(ring, rings)) continue;                       // 融合环(吖啶/萘/蒽母核)绝不旋转
+    const rs=new Set(ring);
+    let ext=[]; for(const a of ring) for(const nb of adj[a]) if(!rs.has(nb)) ext.push(nb);
+    if(ext.length<1) continue;                                    // 完全内部的环
+    let ipso=-1,best=-1; for(const a of ring){ let c=0; for(const nb of adj[a]) if(!rs.has(nb)) c++; if(c>best){best=c;ipso=a;} }
+    const d=_prpBfsDist(adj,rs,ipso); let para=-1,pb=-1; for(const a of ring) if(d[a]>pb){pb=d[a];para=a;}
+    if(para<0) continue;
+    const tether = ext.find(x=>deg[x]>1); const t = (tether!==undefined)?tether:ext[0]; // 母核连接点(deg>1); 叶取代基(F/CH3…)随环一起转
+    const S=new Set(ring); for(const a of ring) for(const nb of adj[a]) if(!rs.has(nb)&&nb!==t) S.add(nb);
+    out.push({ipso,para,t,S});
+  }
+  const paths=_prpGetPaths(svg);
+  for(const r of out){
+    const ip=_prpGetAtomPos(paths,r.ipso); const pp=_prpGetAtomPos(paths,r.para);
+    if(!ip||!pp) continue;
+    const cur=Math.atan2(pp[1]-ip[1],pp[0]-ip[0])*180/Math.PI;
+    let target=0; const ep=_prpGetAtomPos(paths,r.t); if(ep && ep[0]>ip[0]) target=180; else target=0;
+    const th=(target-cur)*Math.PI/180;
+    if(Math.abs(((th*180/Math.PI+180)%360)-180)<1e-6) continue;  // 已水平, 跳过
+    for(const p of paths){ const ai=_prpAtomsInClass(p.cls); let rot=false; if(p.cls.includes('bond-')) rot=ai.size===2&&[...ai].every(x=>r.S.has(x)); else rot=ai.size===1&&r.S.has([...ai][0]); if(!rot) continue; const nd=_prpRotateD(p.d,ip,th); svg=svg.replace(p.tag, p.tag.replace(/d='[^']*'/, "d='"+nd+"'")); }
+  }
+  return svg;
+}
+
 /* ---------- 结构式绘制 ---------- */
 function molToSVG(smiles){
   if (!RDKit || !smiles) return null;
@@ -66,7 +119,9 @@ function molToSVG(smiles){
     try { mol = RDKit.get_mol(c); } catch(e){ mol = null; }
     if (!mol) continue;
     try {
-      const svg = mol.get_svg(250, 195);
+      const svg0 = mol.get_svg(250, 195);
+      let svg = svg0;
+      try { const blk = mol.get_new_coords(); svg = postRotatePendantRings(svg0, blk); } catch(e){}
       mol.delete();
       return svg;
     } catch(e){ if (mol) mol.delete(); }
