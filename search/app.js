@@ -79,36 +79,53 @@ function _prpGetAtomPos(paths, k){ // 旋转不变: 取每条入射键"最靠近
 }
 function _prpRotateD(d,piv,th){ return d.replace(/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/g,(m,x,y)=>{ const dx=parseFloat(x)-piv[0],dy=parseFloat(y)-piv[1]; const nx=piv[0]+dx*Math.cos(th)-dy*Math.sin(th); const ny=piv[1]+dx*Math.sin(th)+dy*Math.cos(th); return nx.toFixed(2)+','+ny.toFixed(2); }); }
 function _prpAffineD(d, fn){ return d.replace(/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/g,(m,x,y)=>{ const r=fn(parseFloat(x),parseFloat(y)); return r[0].toFixed(2)+','+r[1].toFixed(2); }); }
+/* 悬挂(末端)六元环取向规范化: 让"无取代基的干净末端苯环"水平(0°/180°), 视觉统一"正"。
+ * 重要: 仅对「非融合 且 仅有一个外部连接(即环上无任何取代基)」的末端苯环做旋转;
+ *   旋转绕该环与母核相连的 ipso 原子(pivot, 固定不动), 整环刚体旋转, 数学上不可能断键。
+ *   其余情形一律不旋转, 保留 RDKit 原布局:
+ *     · 带取代基的苯环(乙酰/甲氧/甲基/F… )—— 旧逻辑会撕裂取代基支链, 现已排除;
+ *     · 联苯/环-环相连(tether 落在另一个候选环内)—— 两环都不转, 避免撕裂环间键;
+ *     · 稠合母核(萘/蒽/吖啶)—— 绝不旋转。
+ *   这样可在消除"断键/错位"的前提下, 仅对最安全的一类结构做水平化。 */
 function postRotatePendantRings(svg, blk){
   if(!svg || !blk) return svg;
   const P=_prpParseV2000(blk); const adj=_prpBuildAdj(P.bondLines,P.nAtoms); const deg=_prpDegree(adj);
   const rings=_prpFindRings(adj,P.nAtoms,6);
-  const out=[];
+  // 候选: 非融合六元环, 且「仅一个外部连接」(无取代基的干净末端环)
+  const cand=[];
   for(const ring of rings){
-    if(_prpIsFused(ring, rings)) continue;                       // 融合环(吖啶/萘/蒽母核)绝不旋转
+    if(_prpIsFused(ring, rings)) continue;                       // 融合母核绝不旋转
     const rs=new Set(ring);
     let ext=[]; for(const a of ring) for(const nb of adj[a]) if(!rs.has(nb)) ext.push(nb);
-    if(ext.length<1) continue;                                    // 完全内部的环
-    let ipso=-1,best=-1; for(const a of ring){ let c=0; for(const nb of adj[a]) if(!rs.has(nb)) c++; if(c>best){best=c;ipso=a;} }
-    const d=_prpBfsDist(adj,rs,ipso); let para=-1,pb=-1; for(const a of ring) if(d[a]>pb){pb=d[a];para=a;}
-    if(para<0) continue;
-    const tether = ext.find(x=>deg[x]>1); const t = (tether!==undefined)?tether:ext[0]; // 母核连接点(deg>1); 叶取代基(F/CH3…)随环一起转
-    const S=new Set(ring); for(const a of ring) for(const nb of adj[a]) if(!rs.has(nb)&&nb!==t) S.add(nb);
-    out.push({ipso,para,t,S});
+    if(ext.length!==1) continue;                                 // 多连接(取代基/联苯中段/内部环)跳过
+    const t=ext[0];
+    cand.push({ring, rs, t});
   }
+  // 联苯/环-环: 若某候选的 tether 落在另一个候选环内, 两环都不旋转(否则撕裂环间键)
+  const candAtoms=new Set(); for(const c of cand) for(const a of c.ring) candAtoms.add(a);
   const paths=_prpGetPaths(svg);
-  for(const r of out){
-    const ip=_prpGetAtomPos(paths,r.ipso); const pp=_prpGetAtomPos(paths,r.para);
-    if(!ip||!pp) continue;
-    const cur=Math.atan2(pp[1]-ip[1],pp[0]-ip[0])*180/Math.PI;
-    let target=0; const ep=_prpGetAtomPos(paths,r.t); if(ep && ep[0]>ip[0]) target=180; else target=0;
-    const th=(target-cur)*Math.PI/180;
+  for(const c of cand){
+    if(candAtoms.has(c.t)) continue;                             // 环-环相连: 跳过
+    let p=-1; for(const a of c.ring) if(adj[a].includes(c.t)){ p=a; break; }
+    if(p<0) continue;
+    // 取 ipso 与其在环上的某邻居构成的「环边」作为对齐基准(边 → 水平 0°/180°, 而非对角 0↔5)
+    const np=adj[p].find(nb=>c.rs.has(nb));
+    if(np<0) continue;
+    const ip=_prpGetAtomPos(paths,p);
+    const npPos=_prpGetAtomPos(paths,np);
+    if(!ip||!npPos) continue;
+    const cur=Math.atan2(npPos[1]-ip[1],npPos[0]-ip[0])*180/Math.PI;   // 当前边角(非对角)
+    // 把边对齐到 0° 或 180°(取离当前角更近的那个, 避免多转); 父核在右(ep.x>ip.x)时选 180°
+    let target=0; const ep=_prpGetAtomPos(paths,c.t);
+    if(ep && ep[0]>ip[0]) target=180; else target=0;
+    let th=(target-cur)*Math.PI/180;
     if(Math.abs(((th*180/Math.PI+180)%360)-180)<1e-6) continue;  // 已水平, 跳过
-    for(const p of paths){ const ai=_prpAtomsInClass(p.cls); let rot=false;
-      if(p.cls.includes('bond-')) rot=ai.size===2&&[...ai].every(x=>r.S.has(x));      // 普通键: 两原子都在 S 才转
-      else if(ai.size===1) rot=r.S.has([...ai][0]);                                    // 单原子类(部分标签)
-      else { const c=_prpCentroid(p.d); if(c){ for(const a of r.S){ const ap=_prpGetAtomPos(paths,a); if(ap && Math.hypot(c[0]-ap[0],c[1]-ap[1])<16){ rot=true; break; } } } } // 无原子类标签(空缺 class 的字形路径): 质心贴近 S 中原子则随环一起转
-      if(!rot) continue; const nd=_prpRotateD(p.d,ip,th); svg=svg.replace(p.tag, p.tag.replace(/d='[^']*'/, "d='"+nd+"'")); }
+    const M=c.rs;
+    for(const pa of paths){ const ai=_prpAtomsInClass(pa.cls); let rot=false;
+      if(pa.cls.includes('bond-')) rot=ai.size===2&&[...ai].every(x=>M.has(x));      // 普通键: 两原子都在环内才转
+      else if(ai.size===1) rot=M.has([...ai][0]);                                    // 单原子类标签随环转
+      else { const ctd=_prpCentroid(pa.d); if(ctd){ for(const a of M){ const ap=_prpGetAtomPos(paths,a); if(ap && Math.hypot(ctd[0]-ap[0],ctd[1]-ap[1])<16){ rot=true; break; } } } } // 无原子类标签(字形路径): 质心贴近环中原子则随环转
+      if(!rot) continue; const nd=_prpRotateD(pa.d,ip,th); svg=svg.replace(pa.tag, pa.tag.replace(/d='[^']*'/, "d='"+nd+"'")); }
   }
   /* 旋转后部分原子可能超出原始 250x195 画布 -> 浏览器裁切(断键/残线)。整体缩放居中回原画布, 保证不裁切且显示尺寸稳定 */
   const _ps=_prpGetPaths(svg); let _mnx=1e9,_mny=1e9,_mxx=-1e9,_myy=-1e9;
