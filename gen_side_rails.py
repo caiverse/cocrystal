@@ -89,15 +89,9 @@ def normalize_pendant_rings(mol):
     F = 1.25  # 系链拉长系数
     for ri, ring, ipso, tether in order:
         rs = set(ring)
-        d = _bfs_dist(adj, rs, ipso)
-        para = max(ring, key=lambda a: d.get(a, 0))
-        # S_rot: 本环 + 直接取代基(非其它环的原子, 且非系链)
-        Srot = set(ring)
-        for a in ring:
-            for nb in adj[a]:
-                if nb not in rs and nb != tether and nb not in ringof:
-                    Srot.add(nb)
-        # S_trans: 去掉系链键后的连通片断(本环 + 嵌套子环 + 取代基), 作为整体平移
+        # S_trans / S_rot: 去掉系链键后的整个连通片断(本环 + 全部取代基支链 + 嵌套子环),
+        # 作为刚体一起旋转/平移。这样多原子取代基(如 -CF3 / -COOMe / -OEt 的末端 O/F)不会
+        # 被落在原地造成脱附/残线(旧版 S_rot 只含"直接邻原子", 漏掉支链末端原子 -> 浮空黑点)。
         visited = set(ring); stack = list(ring)
         while stack:
             a = stack.pop()
@@ -107,11 +101,30 @@ def normalize_pendant_rings(mol):
                 if nb not in visited:
                     visited.add(nb); stack.append(nb)
         Str = visited
-        ix, iy = _xy(ipso); px, py = _xy(para); tx, ty = _xy(tether)
-        cur = math.atan2(py - iy, px - ix) * 180.0 / math.pi
-        target = 180.0 if tx > ix else 0.0
-        th = (target - cur) * math.pi / 180.0
-        if abs(((th * 180.0 / math.pi + 180) % 360) - 180) >= 1e-6:
+        Srot = Str
+        ix, iy = _xy(ipso)
+        # 取向: 对齐"ipso -> 相邻环原子"这条环边到水平(0/180), 而非直径 -> 所有苯环统一平顶(正向),
+        # 与线上检索站 JS 路径(postRotatePendantRings 阶段A)口径一致。对齐直径会时而平顶、时而尖顶
+        # (尖顶向左/右看起来就"歪 30°"), 正是用户此前看到的"斜"。
+        np_a = next((nb for nb in adj[ipso] if nb in rs), None)
+        if np_a is not None:
+            nx, ny = _xy(np_a); tx2, ty2 = _xy(tether)
+            cur = math.atan2(ny - iy, nx - ix) * 180.0 / math.pi
+            def _norm(x):
+                while x > 180: x -= 360
+                while x < -180: x += 360
+                return x
+            target = 0.0 if abs(_norm(0 - cur)) <= abs(_norm(180 - cur)) else 180.0
+            th = (target - cur) * math.pi / 180.0
+            # 翻转判定: 旋转后环质心应在 anchor(系链)反方向; 否则翻转 180°, 使环体不压到母核上。
+            def _rp(i, ang):
+                x, y = _xy(i); dx = x - ix; dy = y - iy
+                return ix + dx * math.cos(ang) - dy * math.sin(ang), iy + dx * math.sin(ang) + dy * math.cos(ang)
+            cxs = [_rp(a, th)[0] for a in ring]; cys = [_rp(a, th)[1] for a in ring]
+            cxr = sum(cxs) / len(cxs) - ix; cyr = sum(cys) / len(cys) - iy
+            adx = tx2 - ix; ady = ty2 - iy
+            if cxr * adx + cyr * ady > 0:
+                th += math.pi
             cos_t, sin_t = math.cos(th), math.sin(th)
             for i in Srot:
                 x, y = _xy(i); dx = x - ix; dy = y - iy
@@ -120,6 +133,7 @@ def normalize_pendant_rings(mol):
                 conf.SetAtomPosition(i, Point3D(nx, ny, 0.0))
             changed = True
         # 系链拉长: 把整个悬挂片断沿"远离母核"方向平移
+        tx, ty = _xy(tether)
         L0 = math.hypot(ix - tx, iy - ty)
         if L0 > 1e-6:
             ux, uy = (ix - tx) / L0, (iy - ty) / L0
