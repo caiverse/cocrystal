@@ -138,6 +138,25 @@ function postRotatePendantRings(svg, blk){
       if(at.size===1 && inf===1){ elems[ei].owner=ji; break; }   // 片断原子标签
     }
   }
+  // 携带 RDKit 在无 class 碳原子上画的"小黑点"三角(填充:none、黑色描边、仅 3 点):
+  // 这类图元不带 atom- class, 上面按 class 的归属逻辑会漏掉它们; 若不随片断一起旋转,
+  // 旋转后它们会残留在旧顶点位置, 形成"游离黑点/环变形"假象(小分子尤为明显, 因点较大未被 stripStrayDots 剔除)。
+  // 故按质心位置判断: 若落在某 job 片断原子的容差范围内, 则归入该 job 一并旋转。
+  for(const e of elems){ if(e.owner>=0) continue; if(e.cls!=='') continue;   // 仅未分类图元
+    const style=(e.full.match(/style='([^']*)'/)||[])[1]||'';
+    if(!/fill:none/.test(style)) continue;
+    if(!/stroke:\s*#000000|stroke:\s*#000\b|stroke:\s*black/i.test(style)) continue;
+    const d=(e.full.match(/d='([^']*)'/)||[])[1]||'';
+    const pts=(d.match(/(-?\d+\.?\d*),(-?\d+\.?\d*)/g)||[]);
+    if(pts.length!==3) continue;
+    const nums=pts.map(s=>s.split(',').map(Number));
+    const cxm=(nums[0][0]+nums[1][0]+nums[2][0])/3, cym=(nums[0][1]+nums[1][1]+nums[2][1])/3;
+    for(let ji=0; ji<jobs.length; ji++){ const j=jobs[ji]; if(j.th===null) continue;
+      let hit=false;
+      for(const a of j.frag){ const p=getPos(a); if(p && Math.hypot(p[0]-cxm, p[1]-cym) < 7){ hit=true; break; } }
+      if(hit){ e.owner=ji; break; }
+    }
+  }
   // 删除片断图元(按 start 降序, 保持索引有效), 再按 job 包进 <g transform="rotate(...)">
   const removeSet=elems.filter(e=>e.owner>=0);
   removeSet.sort((a,b)=>b.start-a.start);
