@@ -45,14 +45,20 @@ def _bfs_dist(adj, rs, start):
     return d
 
 def normalize_pendant_rings(mol):
-    """让所有"末端(叶)六元环"(仅一个母核连接点、且不与其它六元环融合)取向水平(0°/180°)，
-    并把系链(与母核相连的键)拉长以缓解取代基拥挤；融合母核(吖啶/萘/蒽等)绝不旋转。
-    关键修正(对比旧版):
-      1) 旋转集合 S_rot 只含本环 + 直接取代基, 绝不纳入"另一个环"的原子 —— 旧版会把嵌套的
-         子悬挂环的连结点一起带走, 导致子环被拉歪(出现 114.9°/138.8°/-43.1° 等斜角与变形)。
-      2) 系链拉长改为"整体平移"本悬挂片断(S_trans, 含嵌套子环, 作为刚体), 只拉伸与母核相连的
-         那一根键, 片断内部键与子环取向完全不变。
-      3) 处理顺序 root 先于 leaf, 保证嵌套子环随父环整体平移一次, 不会被重复平移。
+    """让所有"末端(叶)六元环"取向水平(0°/180°)、并把系链(连母核的键)拉长以缓解取代基拥挤；
+    融合/螺/桥联母核与"中心环"绝不旋转。
+    本实现与线上检索站 JS 路径 postRotatePendantRings 口径严格一致(同一套判定 + 同一套守卫),
+    目的是让首页侧栏与检索站结构图行为统一、且杜绝 Z 形折弯/双旋转:
+      - sharesAtom: 任一环原子属于 >=2 个环 -> 稠合/螺/桥联, 跳过(刚性母核)。
+      - isLeaf(SUBST_MAX=5): 摘掉环原子后, 其余图若分裂出 >5 原子的大分量 -> 骨架被切断,
+        非叶子环, 跳过(避免旋转中心环把骨架扯断)。
+      - reachExcl 选系链: 锚点外连"可达原子数最大"者 = 真正连向母核的那根键; 取代基(CF3/NO2/OH)
+        外连数小, 绝不会被误判为系链(旧版用 deg>1 启发式会误选取代基碳 -> 连链被纳入旋转 -> 双旋转 Z 弯)。
+      - frag = 环原子 + 沿"非系链键" BFS 可达的取代基; 不含连链(连链不被旋转 -> 两个苯环各自
+        绕自身 ipso 旋转, 连链端点(ipso)固定, 绝不会被二次旋转形成 Z 弯)。
+      - 守卫: frag.size > max(8, floor(nAtoms*0.6)) -> 片断过大(连链把另一苯环也拉进来)则跳过,
+        直接采用 coordgen 自然取向, 保持连通、不破坏主结构(与检索站完全一致)。
+      - hasSubst: 仅当片断含取代基(片断 > 环)时才加长系链; 干净叶环不加长(避免产生断连空隙)。
     坐标层面旋转 => 原子标签(由 RDKit 按坐标绘制)始终随原子走, 不会脱附/漂浮。
     """
     rings = _rings6(mol)
@@ -63,7 +69,6 @@ def normalize_pendant_rings(mol):
     for b in mol.GetBonds():
         i, j = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
         adj[i].append(j); adj[j].append(i)
-    deg = [len(adj[i]) for i in range(n)]
     ringof = {}
     for ri, r in enumerate(rings):
         for a in r:
@@ -71,77 +76,146 @@ def normalize_pendant_rings(mol):
     conf = mol.GetConformer()
     def _xy(i):
         p = conf.GetAtomPosition(i); return p.x, p.y
-    pend = []
-    for ri, ring in enumerate(rings):
-        if _is_fused(ring, rings):
-            continue
-        rs = set(ring)
-        ext = [nb for a in ring for nb in adj[a] if nb not in rs]
-        if len(ext) < 1:
-            continue
-        ipso = max(ring, key=lambda a: sum(1 for nb in adj[a] if nb not in rs))
-        tether = next((x for x in ext if deg[x] > 1), ext[0])
-        pend.append((ri, ring, ipso, tether))
-    def _is_leaf(t):
-        return any(t[3] in o for o in rings)
-    order = sorted(pend, key=lambda t: 1 if _is_leaf(t) else 0)  # 先处理 root(连母核), 后 leaf
-    changed = False
-    F = 1.25  # 系链拉长系数
-    for ri, ring, ipso, tether in order:
-        rs = set(ring)
-        # S_trans / S_rot: 去掉系链键后的整个连通片断(本环 + 全部取代基支链 + 嵌套子环),
-        # 作为刚体一起旋转/平移。这样多原子取代基(如 -CF3 / -COOMe / -OEt 的末端 O/F)不会
-        # 被落在原地造成脱附/残线(旧版 S_rot 只含"直接邻原子", 漏掉支链末端原子 -> 浮空黑点)。
-        visited = set(ring); stack = list(ring)
-        while stack:
-            a = stack.pop()
-            for nb in adj[a]:
-                if (a == ipso and nb == tether) or (a == tether and nb == ipso):
+
+    def shares_atom(ri):
+        # 任一环原子属于 >=2 个环 -> 稠合/螺/桥联, 视为刚性母核不旋转
+        return any(len(ringof.get(a, [])) > 1 for a in rings[ri])
+
+    SUBST_MAX = 5
+    def is_leaf(ring_atoms):
+        # 摘掉环原子后, 其余图必须仍基本连通(只允许 <=SUBST_MAX 的小取代基碎片孤立)
+        rem = [True] * n
+        for a in ring_atoms:
+            rem[a] = False
+        rest = [i for i in range(n) if rem[i]]
+        if not rest:
+            return False
+        visited = set(); comps = []
+        for s0 in rest:
+            if s0 in visited:
+                continue
+            comp = []; q = [s0]; visited.add(s0)
+            while q:
+                u = q.pop(); comp.append(u)
+                for nb in adj[u]:
+                    if rem[nb] and nb not in visited:
+                        visited.add(nb); q.append(nb)
+            comps.append(comp)
+        if not comps:
+            return False
+        comps.sort(key=len, reverse=True)
+        for k in range(1, len(comps)):
+            if len(comps[k]) > SUBST_MAX:
+                return False
+        return True
+
+    def reach_excl(nb, ca):
+        # 从 nb 出发、不进入 ca(环原子)的可达原子数 -> 区分"连向母核"与"取代基"
+        seen = {nb}; st = [nb]; cnt = 0
+        while st:
+            u = st.pop(); cnt += 1
+            for v in adj[u]:
+                if v in seen or v in ca:
                     continue
-                if nb not in visited:
-                    visited.add(nb); stack.append(nb)
-        Str = visited
-        Srot = Str
-        ix, iy = _xy(ipso)
-        # 取向: 对齐"ipso -> 相邻环原子"这条环边到水平(0/180), 而非直径 -> 所有苯环统一平顶(正向),
-        # 与线上检索站 JS 路径(postRotatePendantRings 阶段A)口径一致。对齐直径会时而平顶、时而尖顶
-        # (尖顶向左/右看起来就"歪 30°"), 正是用户此前看到的"斜"。
-        np_a = next((nb for nb in adj[ipso] if nb in rs), None)
-        if np_a is not None:
-            nx, ny = _xy(np_a); tx2, ty2 = _xy(tether)
-            cur = math.atan2(ny - iy, nx - ix) * 180.0 / math.pi
-            def _norm(x):
-                while x > 180: x -= 360
-                while x < -180: x += 360
-                return x
-            target = 0.0 if abs(_norm(0 - cur)) <= abs(_norm(180 - cur)) else 180.0
-            th = (target - cur) * math.pi / 180.0
-            # 翻转判定: 旋转后环质心应在 anchor(系链)反方向; 否则翻转 180°, 使环体不压到母核上。
-            def _rp(i, ang):
+                seen.add(v); st.append(v)
+        return cnt
+
+    jobs = []
+    for ri, ring in enumerate(rings):
+        if shares_atom(ri):
+            continue
+        ring_atoms = set(ring)
+        if not is_leaf(ring_atoms):
+            continue
+        # 系链 = 环原子 -> 非环原子的外部键中, 锚点外连可达最多者(连向母核)
+        tether = None; best = -1
+        for a in ring:
+            for nb in adj[a]:
+                if nb in ring_atoms:
+                    continue
+                sz = reach_excl(nb, ring_atoms)
+                if sz > best:
+                    best = sz; tether = (a, nb)
+        if tether is None:
+            continue
+        ip, anchor = tether
+        # 片断 = 环原子 + 沿非系链键 BFS 可达的取代基(不含连链)
+        frag = set(ring_atoms); q = list(ring_atoms)
+        while q:
+            u = q.pop()
+            for nb in adj[u]:
+                if nb in frag:
+                    continue
+                if (u == ip and nb == anchor) or (u == anchor and nb == ip):
+                    continue
+                frag.add(nb); q.append(nb)
+        if len(frag) > max(8, math.floor(n * 0.6)):
+            continue  # 守卫: 片断过大(连链把另一苯环拉进来) -> 跳过, 不破坏主结构
+        has_subst = len(frag) > len(ring_atoms)
+        jobs.append((ri, ring_atoms, ip, anchor, frag, has_subst))
+
+    changed = False
+    F = 1.25  # 系链拉长系数(仅对含取代基者)
+    non_frag_all = set(range(n))
+    for ri, ring_atoms, ip, anchor, frag, has_subst in jobs:
+        ix, iy = _xy(ip)
+        ax, ay = _xy(anchor)
+        # 取向目标: 让系链(ipso->anchor, 即官能团 C=N/炔/母核连接键)沿 ipso 处两条环键的外角平分线 =
+        # "环心->ipso"放射外向方向, 使系链与两条环键夹角相等(均 120°, 自然连接); 这等价于在"边水平(平顶)"
+        # 基础上转 30°, 专治"环通过 C=N/炔/等官能团连接时一边锐角一边钝角的怪角度"。
+        cxr0 = sum(_xy(a)[0] for a in ring_atoms) / len(ring_atoms)
+        cyr0 = sum(_xy(a)[1] for a in ring_atoms) / len(ring_atoms)
+        rad_ang = math.atan2(iy - cyr0, ix - cxr0)   # 放射外向方向(指向远离环心)
+        anc_ang = math.atan2(ay - iy, ax - ix)         # 当前 anchor(系链)方向
+        th0 = rad_ang - anc_ang
+        # 在两种取向(th0=系链放射外向 与 th0+pi=系链指向环内)中选与母核/其余原子 clash 更少者 ->
+        # 杜绝旋转把取代基(F/CF3/OH)甩到母核原子(N/碳)上造成重叠(典型: struct_13 的 F 与 N 重叠)。
+        non_frag = non_frag_all - frag
+        def _clash_for(th):
+            # 只统计"两个都是杂原子(N/O/F/Cl/Br/S/P…)且中心距<0.5"的成对接近——这才是真正可见的
+            # "标签互相压"(如 F 与 N/O 重叠)。碳不画标签, 碳-碳/杂原子-碳靠近不可见, 不计;
+            # 阈值 0.5(约半根键长)对应标签文字实际重叠, 0.5~0.6 的"略近"不误判, 避免把环退回歪斜取向。
+            c = 0
+            sym_i_all = [mol.GetAtomWithIdx(i).GetSymbol() for i in frag]
+            for idx_i, i in enumerate(frag):
+                if sym_i_all[idx_i] == 'C':
+                    continue
                 x, y = _xy(i); dx = x - ix; dy = y - iy
-                return ix + dx * math.cos(ang) - dy * math.sin(ang), iy + dx * math.sin(ang) + dy * math.cos(ang)
-            cxs = [_rp(a, th)[0] for a in ring]; cys = [_rp(a, th)[1] for a in ring]
-            cxr = sum(cxs) / len(cxs) - ix; cyr = sum(cys) / len(cys) - iy
-            adx = tx2 - ix; ady = ty2 - iy
-            if cxr * adx + cyr * ady > 0:
-                th += math.pi
-            cos_t, sin_t = math.cos(th), math.sin(th)
-            for i in Srot:
-                x, y = _xy(i); dx = x - ix; dy = y - iy
-                nx = ix + dx * cos_t - dy * sin_t
-                ny = iy + dx * sin_t + dy * cos_t
-                conf.SetAtomPosition(i, Point3D(nx, ny, 0.0))
-            changed = True
-        # 系链拉长: 把整个悬挂片断沿"远离母核"方向平移
-        tx, ty = _xy(tether)
-        L0 = math.hypot(ix - tx, iy - ty)
-        if L0 > 1e-6:
-            ux, uy = (ix - tx) / L0, (iy - ty) / L0
-            delta = (F - 1.0) * L0
-            for i in Str:
-                x, y = _xy(i)
-                conf.SetAtomPosition(i, Point3D(x + ux * delta, y + uy * delta, 0.0))
-            changed = True
+                xi = ix + dx * math.cos(th) - dy * math.sin(th)
+                yi = iy + dx * math.sin(th) + dy * math.cos(th)
+                for j in non_frag:
+                    if j in adj[i]:
+                        continue
+                    if mol.GetAtomWithIdx(j).GetSymbol() == 'C':
+                        continue
+                    pj = conf.GetAtomPosition(j)
+                    if math.hypot(xi - pj.x, yi - pj.y) < 0.5:
+                        c += 1
+            return c
+        c0 = _clash_for(th0); c1 = _clash_for(th0 + math.pi)
+        # 若两种平顶取向都无法避免与母核 clash(如 ortho-F 直接连母核 N 的拓扑, 邻位取代基天然贴近母核),
+        # 则放弃旋转、保留 coordgen 自然布局(零 clash)。clean 优先于 upright: 宁可略歪也不让标签重叠。
+        if min(c0, c1) > 0:
+            continue
+        th = th0 if c0 <= c1 else th0 + math.pi
+        cos_t, sin_t = math.cos(th), math.sin(th)
+        for i in frag:
+            x, y = _xy(i); dx = x - ix; dy = y - iy
+            nxp = ix + dx * cos_t - dy * sin_t
+            nyp = iy + dx * sin_t + dy * cos_t
+            conf.SetAtomPosition(i, Point3D(nxp, nyp, 0.0))
+        changed = True
+        # 系链拉长: 仅含取代基者, 把片断沿"远离母核"方向平移(加长 ipso-anchor 那一根键, 同时进一步远离母核缓解拥挤)
+        if has_subst:
+            tx, ty = _xy(anchor)
+            L0 = math.hypot(ix - tx, iy - ty)
+            if L0 > 1e-6:
+                ux, uy = (ix - tx) / L0, (iy - ty) / L0
+                delta = (F - 1.0) * L0
+                for i in frag:
+                    x, y = _xy(i)
+                    conf.SetAtomPosition(i, Point3D(x + ux * delta, y + uy * delta, 0.0))
+                changed = True
     return changed
 
 def render(smiles, path):
@@ -203,36 +277,37 @@ FIXED_CODES = [
     "CC-GF1TLL42I", "CC-HuU2g06cT", "CC-FVEwrOq5u", "CC-pFKxJ39xQ", "CC-qnIslewtq",
     "CC-vR1Vdc5SI", "CC-bGmr8GZBT", "CC-NqwQHOIFV", "CC-5EzjVe4QH",
 ]
-rec_by_code = {}
-for sh in glob.glob(os.path.join(ROOT, "search", "data", "products.*.json")):
-    if sh.endswith("manifest.json"):
-        continue
-    try:
-        data = json.load(open(sh, encoding="utf-8"))
-    except Exception:
-        continue
-    if isinstance(data, list):
-        for it in data:
-            if isinstance(it, dict) and it.get("code") in FIXED_CODES:
-                rec_by_code[it["code"]] = it
 
-picked = []
-for code in FIXED_CODES:
-    r = rec_by_code.get(code)
-    if r and r.get("s"):
-        picked.append((r.get("g", "其他"), r["s"], r.get("n", ""), code))
+def load_picked():
+    """从 search/data/products.*.json 读取 FIXED_CODES 对应的 (cat, smiles, name, code)。"""
+    rec_by_code = {}
+    for sh in glob.glob(os.path.join(ROOT, "search", "data", "products.*.json")):
+        if sh.endswith("manifest.json"):
+            continue
+        try:
+            data = json.load(open(sh, encoding="utf-8"))
+        except Exception:
+            continue
+        if isinstance(data, list):
+            for it in data:
+                if isinstance(it, dict) and it.get("code") in FIXED_CODES:
+                    rec_by_code[it["code"]] = it
+    picked = []
+    for code in FIXED_CODES:
+        r = rec_by_code.get(code)
+        if r and r.get("s"):
+            picked.append((r.get("g", "其他"), r["s"], r.get("n", ""), code))
+    return picked
 
-# 渲染
-rails = []
-for i, (g, s, n, code) in enumerate(picked, 1):
-    fn = "struct_%02d.svg" % i
-    if render(s, os.path.join(OUTDIR, fn)):
-        rails.append({"cat": g, "name": n or "", "code": code or "", "svg": "side-structures/" + fn})
-
-# 写 rails.js（数据内联，无 fetch 依赖）
-js = "// 首页两侧滚动结构推送（产物库真实结构）。由 gen_side_rails.py 生成。\n"
-js += "(function(){\n  var RAILS = " + json.dumps(rails, ensure_ascii=False) + ";\n"
-js += """
+def write_rails(picked):
+    rails = []
+    for i, (g, s, n, code) in enumerate(picked, 1):
+        fn = "struct_%02d.svg" % i
+        if render(s, os.path.join(OUTDIR, fn)):
+            rails.append({"cat": g, "name": n or "", "code": code or "", "svg": "side-structures/" + fn})
+    js = "// 首页两侧滚动结构推送（产物库真实结构）。由 gen_side_rails.py 生成。\n"
+    js += "(function(){\n  var RAILS = " + json.dumps(rails, ensure_ascii=False) + ";\n"
+    js += """
   function card(d){
     var a=document.createElement('a');
     a.className='rail-card'; a.href='search/';
@@ -255,10 +330,17 @@ js += """
   });
 })();
 """
-with open(os.path.join(ROOT, "rails.js"), "w", encoding="utf-8") as f:
-    f.write(js)
+    with open(os.path.join(ROOT, "rails.js"), "w", encoding="utf-8") as f:
+        f.write(js)
+    return rails
 
-print("picked", len(picked), "rendered", len(rails))
-print("categories:", [p[0] for p in picked])
-for r in rails:
-    print(" ", r["svg"], "|", r["cat"], "|", r["name"][:24], "|", r["code"])
+def main():
+    picked = load_picked()
+    rails = write_rails(picked)
+    print("picked", len(picked), "rendered", len(rails))
+    print("categories:", [p[0] for p in picked])
+    for r in rails:
+        print(" ", r["svg"], "|", r["cat"], "|", r["name"][:24], "|", r["code"])
+
+if __name__ == "__main__":
+    main()
