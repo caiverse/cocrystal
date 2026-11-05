@@ -1,6 +1,6 @@
 {
-  "total": 1099028,
-  "with_smiles": 1099028,
+  "total": 1117768,
+  "with_smiles": 1117768,
   "without_smiles": 0,
   "smiles_invalid_dropped": 0,
   "coverage_pct": 100.0,
@@ -92,7 +92,11 @@
     "芳香单胺",
     "酰肼",
     "苯并噻唑-2-胺",
-    "DPPH醛肟酯产物库"
+    "DPPH醛肟酯产物库",
+    "DOPO-席夫碱(亚胺)",
+    "DOPO-酰腙",
+    "DOPO-缩氨脲",
+    "DOPO-腙"
   ],
   "by_category": {
     "席夫碱": 75047,
@@ -183,7 +187,11 @@
     "胺取代新型地平（丙二酸二叔丁酯）": 5548,
     "胺取代新型地平（丙二酸二苄酯）": 5548,
     "吲唑": 34286,
-    "DPPH醛肟酯产物库": 605
+    "DPPH醛肟酯产物库": 605,
+    "DOPO-席夫碱(亚胺)": 5000,
+    "DOPO-酰腙": 5000,
+    "DOPO-缩氨脲": 4332,
+    "DOPO-腙": 4408
   },
   "by_library": {
     "席夫碱产物库_胺醛对应产物表_2026-10-29.csv": 75047,
@@ -279,8 +287,12 @@
     "胺取代_新型_53_丙二酸二叔丁酯_产物库_中间表_2026-11-03.csv": 5548,
     "胺取代_新型_54_丙二酸二苄酯_产物库_中间表_2026-11-03.csv": 5548,
     "吲唑产物库_Fischer路线对应产物表_2026-11-03.csv": 34286,
-    "DPPH_芳香醛_席夫碱产物库_2026-11-05": 605
+    "DPPH_芳香醛_席夫碱产物库_2026-11-05": 605,
+    "products_DOPO_Schiff_imine.csv": 5000,
+    "products_DOPO_acylhydrazone.csv": 5000,
+    "products_DOPO_hydrazone.csv": 4408,
+    "products_DOPO_semicarbazone.csv": 4332
   },
-  "n_product": 89,
+  "n_product": 93,
   "n_reagent": 4
 }
