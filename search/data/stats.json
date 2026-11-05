@@ -1,6 +1,6 @@
 {
-  "total": 1117768,
-  "with_smiles": 1117768,
+  "total": 1118340,
+  "with_smiles": 1118340,
   "without_smiles": 0,
   "smiles_invalid_dropped": 0,
   "coverage_pct": 100.0,
@@ -96,7 +96,8 @@
     "芳香单胺",
     "酰肼",
     "苯并噻唑-2-胺",
-    "DPPH醛肟酯"
+    "DPPH醛肟酯",
+    "氨基脲席夫碱"
   ],
   "by_category": {
     "席夫碱": 75047,
@@ -191,7 +192,8 @@
     "DOPO-席夫碱(亚胺)": 5000,
     "DOPO-酰腙": 5000,
     "DOPO-缩氨脲": 4332,
-    "DOPO-腙": 4408
+    "DOPO-腙": 4408,
+    "氨基脲席夫碱": 572
   },
   "by_library": {
     "席夫碱产物库_胺醛对应产物表_2026-10-29.csv": 75047,
@@ -291,8 +293,9 @@
     "products_DOPO_Schiff_imine.csv": 5000,
     "products_DOPO_acylhydrazone.csv": 5000,
     "products_DOPO_hydrazone.csv": 4408,
-    "products_DOPO_semicarbazone.csv": 4332
+    "products_DOPO_semicarbazone.csv": 4332,
+    "氨基脲席夫碱_产物表.csv": 572
   },
-  "n_product": 93,
+  "n_product": 94,
   "n_reagent": 4
 }
