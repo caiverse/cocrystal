@@ -171,6 +171,34 @@ function postRotatePendantRings(svg, blk){
   return svg;
 }
 
+/* 去除 RDKit 默认 SVG 残留在(中性)碳原子上的"小黑点"伪影:
+ * 这些是无 class、fill:none、黑色描边、仅 3 个点的极小三角形路径;
+ * 其坐标随分子增大而缩小, 但描边宽度固定 2px, 于是塌缩成实心黑点(苯环外散点)。
+ * 苯等小分子同类三角形较大(>3.5px)看起来正常→保留; 带电杂原子的电荷标记(N+/O-)通常>3.5px→保留。
+ * 仅去除塌缩成黑点的极小三角形, 不影响键线、彩色原子标签与合法电荷标记。 */
+function stripStrayDots(svg){
+  if(!svg) return svg;
+  const re = /<path\b[^>]*\/?>/g; let m; const hits=[];
+  while((m=re.exec(svg))){
+    const tag = m[0];
+    if(/class=/.test(tag)) continue;                       // 保留键线/原子标签(带 class)
+    const style = (tag.match(/style='([^']*)'/)||[])[1]||'';
+    const d = (tag.match(/d='([^']*)'/)||[])[1]||'';
+    if(!/fill:none/.test(style)) continue;                 // 保留填充的彩色原子标签字形
+    if(!/stroke:\s*#000000|stroke:\s*#000\b|stroke:\s*black/i.test(style)) continue;
+    const pts = (d.match(/(-?\d+\.?\d*),(-?\d+\.?\d*)/g)||[]);
+    if(pts.length!==3) continue;                           // 仅 3 点三角形
+    const nums = pts.map(s=>s.split(',').map(Number));
+    const xs=nums.map(p=>p[0]), ys=nums.map(p=>p[1]);
+    const w=Math.max(...xs)-Math.min(...xs), h=Math.max(...ys)-Math.min(...ys);
+    if(Math.max(w,h) > 3.5) continue;                      // 仅去除塌缩成黑点的极小三角形
+    hits.push({idx:m.index, len:tag.length});
+  }
+  hits.sort((a,b)=>b.idx-a.idx);
+  for(const h of hits){ svg = svg.slice(0,h.idx) + svg.slice(h.idx+h.len); }
+  return svg;
+}
+
 /* ---------- 结构式绘制 ---------- */
 function molToSVG(smiles){
   if (!RDKit || !smiles) return null;
@@ -186,6 +214,7 @@ function molToSVG(smiles){
       const svg0 = mol.get_svg(250, 195);
       let svg = svg0;
       try { const blk = mol.get_new_coords(); svg = postRotatePendantRings(svg0, blk); } catch(e){}
+      svg = stripStrayDots(svg);
       mol.delete();
       return svg;
     } catch(e){ if (mol) mol.delete(); }
