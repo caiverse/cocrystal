@@ -1,6 +1,6 @@
 {
-  "total": 1118340,
-  "with_smiles": 1118340,
+  "total": 1143600,
+  "with_smiles": 1143600,
   "without_smiles": 0,
   "smiles_invalid_dropped": 0,
   "coverage_pct": 100.0,
@@ -189,10 +189,10 @@
     "胺取代新型地平（丙二酸二苄酯）": 5548,
     "吲唑": 34286,
     "DPPH醛肟酯": 605,
-    "DOPO-席夫碱(亚胺)": 5000,
-    "DOPO-酰腙": 5000,
-    "DOPO-缩氨脲": 4332,
-    "DOPO-腙": 4408,
+    "DOPO-席夫碱(亚胺)": 11000,
+    "DOPO-酰腙": 11000,
+    "DOPO-缩氨脲": 11000,
+    "DOPO-腙": 11000,
     "氨基脲席夫碱": 572
   },
   "by_library": {
@@ -290,10 +290,10 @@
     "胺取代_新型_54_丙二酸二苄酯_产物库_中间表_2026-11-03.csv": 5548,
     "吲唑产物库_Fischer路线对应产物表_2026-11-03.csv": 34286,
     "DPPH_芳香醛_席夫碱产物库_2026-11-05": 605,
-    "products_DOPO_Schiff_imine.csv": 5000,
-    "products_DOPO_acylhydrazone.csv": 5000,
-    "products_DOPO_hydrazone.csv": 4408,
-    "products_DOPO_semicarbazone.csv": 4332,
+    "products_DOPO_Schiff_imine.csv": 11000,
+    "products_DOPO_acylhydrazone.csv": 11000,
+    "products_DOPO_hydrazone.csv": 11000,
+    "products_DOPO_semicarbazone.csv": 11000,
     "氨基脲席夫碱_产物表.csv": 572
   },
   "n_product": 94,
