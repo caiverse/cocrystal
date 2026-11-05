@@ -69,6 +69,74 @@ async function initRDKit(){
  *   键线截短沿键轴故方向精确, 配合精确环原子位置即得 120°/120°。旋转时小黑点三角随质心归属一并转。
  * 环检测: 仅"真正悬挂的末端环"(单连接点、不与它环融合、去环后其余连通、取代基≤5 原子)会被处理。 */
 function _prpParseV2000(blk){ const L=blk.split('\n'); const c=L[3].trim().split(/\s+/).map(Number); const nA=c[0],nB=c[1]; return {nAtoms:nA,nBonds:nB,atomLines:L.slice(4,4+nA),bondLines:L.slice(4+nA,4+nA+nB)}; }
+/* 把被 depictor 压短的**端基键**拉回中位键长(只动度=1 的原子, 只沿原键方向)。
+ * 起因(2026-11-05 用户: "C=O 双键一个被画成特别长, 一个被画成那么短"):
+ *   get_new_coords() 偶发把某个端基键压到 0.8 Å(中位 1.5), 画出来只有半截 —— 同一分子两个羰基一个长一个短。
+ * 抽样 300 分子统计: 短键(<0.72×中位) 共 165 条, **165 条全是端基**, 非端基 0 条 ——
+ *   所以只需处理端基, 且端基只连一个原子, 沿原方向推远**不会移动其它任何原子、不改变任何键角**。
+ * 只放大不缩小(阈值 0.85×中位), 避免把 depictor 刻意推开的取代基拉回来造成重叠。 */
+function _prpLengthenTerminalBonds(blk){
+  const L = blk.split('\n');
+  const c = (L[3]||'').trim().split(/\s+/).map(Number);
+  const nA = c[0]|0, nB = c[1]|0;
+  if (!(nA > 1 && nB > 0)) return blk;
+  const xy = [];
+  for (let i = 0; i < nA; i++){
+    const t = (L[4+i]||'').trim().split(/\s+/);
+    const x = +t[0], y = +t[1];
+    if (!isFinite(x) || !isFinite(y)) return blk;
+    xy.push([x, y]);
+  }
+  const nb = Array.from({length: nA}, () => []);
+  const ds = [];
+  for (let i = 0; i < nB; i++){
+    const s = L[4+nA+i] || '';
+    const a = parseInt(s.slice(0,3), 10) - 1, b = parseInt(s.slice(3,6), 10) - 1;
+    if (!(a >= 0 && a < nA && b >= 0 && b < nA) || a === b) continue;
+    nb[a].push(b); nb[b].push(a);
+    ds.push(Math.hypot(xy[a][0]-xy[b][0], xy[a][1]-xy[b][1]));
+  }
+  if (ds.length < 2) return blk;
+  ds.sort((p, q) => p - q);
+  const med = ds[(ds.length/2)|0];
+  if (!(med > 0.2)) return blk;
+  const MIN = 0.85 * med;
+  const CLR = 0.50 * med;                                // 允许的最近非键合间隙(半个键长, 约 13px, 不会视觉重叠)
+  const clearOf = (p, k) => {                            // 该点到其它原子的最近距离
+    let m = 1e9;
+    for (let q = 0; q < nA; q++){
+      if (q === k) continue;
+      const d = Math.hypot(xy[q][0]-p[0], xy[q][1]-p[1]);
+      if (d < m) m = d;
+    }
+    return m;
+  };
+  let fixed = 0;
+  for (let k = 0; k < nA; k++){
+    if (nb[k].length !== 1) continue;                    // 只处理端基(度=1)
+    const j = nb[k][0];
+    const dx = xy[k][0]-xy[j][0], dy = xy[k][1]-xy[j][1];
+    const d = Math.hypot(dx, dy);
+    if (d < 1e-6 || d >= MIN) continue;
+    const cur = clearOf(xy[k], k);
+    const f = med / d;
+    const cand = [xy[j][0] + dx * f, xy[j][1] + dy * f];
+    // 防重叠: 拉长后到其它原子的最近距离不得低于 min(原值, 0.50×中位键长); 否则只拉一半, 再不行就放弃。
+    let np = null;
+    if (clearOf(cand, k) >= Math.min(cur, CLR)) np = cand;
+    else {
+      const f2 = 1 + 0.5 * (f - 1);
+      const c2 = [xy[j][0] + dx * f2, xy[j][1] + dy * f2];
+      if (clearOf(c2, k) >= Math.min(cur, CLR)) np = c2;
+    }
+    if (!np) continue;
+    xy[k][0] = np[0]; xy[k][1] = np[1];
+    L[4+k] = xy[k][0].toFixed(4).padStart(10) + xy[k][1].toFixed(4).padStart(10) + (L[4+k]||'').slice(20);
+    fixed++;
+  }
+  if (fixed && globalThis.__PRP_DBG) console.log('[prp] terminal bonds lengthened:', fixed);
+  return L.join('\n');
+}
 /* 清掉 molblock 键块里"双键立体化学=either"的标记(第 4 列 = 3 或 4)。
  * 关键修正(2026-11-05, C=N 被画成交叉): 主链路是
  *   mol.get_new_coords()  ->  molblock  ->  RDKit.get_mol(blk).get_svg()
@@ -608,6 +676,20 @@ function molToSVG(smiles){
       //   苯环恒为正六边形 120°(同一分子实测从 101/139 修复为全 120)。坐标由 coordgen 保证规整。
       let blk = null;
       try { blk = mol.get_new_coords(); } catch(e){ blk = null; }
+      /* 关键修正(2026-11-05, "整体歪斜"): get_new_coords() 的块坐标**没有做规范取向**,
+       *   画出来整个分子是斜着摆的(用户: "这个本来可以画成不斜的")。
+       *   straighten_depiction() 只是把分子整体刚性旋转到规范取向 —— 实测逐键长**一个数都不变**
+       *   (0.797/1.5/1.5 前后完全一致), 环内角也不变, 故不会破坏上面的"正六边形"保证。 */
+      if (blk){
+        try {
+          const mt = RDKit.get_mol(blk);
+          if (mt){ try { mt.straighten_depiction(); blk = mt.get_molblock() || blk; } finally { mt.delete(); } }
+        } catch(e){}
+      }
+      /* 关键修正(2026-11-05, "一个 C=O 特别长一个特别短"): depictor 偶尔把**端基键**压到
+       *   0.8 Å(中位 1.5), 画出来就是半截。抽样 300 分子确认短键 165/165 **全是端基**(非端基 0),
+       *   故只需把端基沿原键方向拉回中位键长 —— 只动端基、只沿原方向, 其余原子与全部角度不受影响。 */
+      if (blk) blk = _prpLengthenTerminalBonds(blk);
       // 关键修正(2026-11-05, C=N 交叉双键): RDKit 写 molblock 时会把"未指定 E/Z 的双键"
       //   标成 stereo=3(either), 再解析回来画图就会画成**交叉双键**(两条线在中点交叉成 X)——
       //   肟 C=N、腙 C=N、查尔酮 C=C 等库全部中招。清掉键的 stereo 字段即可恢复平行双线;
