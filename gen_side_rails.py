@@ -9,6 +9,11 @@ from rdkit import Chem
 from rdkit.Chem import Draw, rdCoordGen
 from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Geometry import Point3D
+try:
+    from rdkit.Chem import rdDepictor   # 规范取向(整体不歪斜), 与检索站 JS 管线 straighten_depiction 对等
+    _HAVE_STRAIGHTEN = True
+except Exception:
+    _HAVE_STRAIGHTEN = False
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUTDIR = os.path.join(ROOT, "side-structures")
@@ -43,6 +48,39 @@ def _bfs_dist(adj, rs, start):
             if nb in rs and nb not in d:
                 d[nb] = d[c] + 1; q.append(nb)
     return d
+
+def _lengthen_terminal_bonds(mol):
+    """端基(度=1)键保护: coordgen 偶发把端基键压到 0.8Å(中位 1.5), 画出来半截
+    (检索站 JS 管线 _prpLengthenTerminalBonds 的同一根因与同一修法)。
+    只放大不缩小(阈值 0.85×中位), 只沿原键方向 —— 不动其它任何原子、不改变任何键角。"""
+    conf = mol.GetConformer()
+    n = mol.GetNumAtoms()
+    nb = [[] for _ in range(n)]
+    ds = []
+    for b in mol.GetBonds():
+        i, j = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
+        nb[i].append(j); nb[j].append(i)
+        p1 = conf.GetAtomPosition(i); p2 = conf.GetAtomPosition(j)
+        ds.append(math.hypot(p1.x - p2.x, p1.y - p2.y))
+    if len(ds) < 2:
+        return 0
+    ds.sort()
+    med = ds[len(ds) // 2]
+    if med <= 0.2:
+        return 0
+    fixed = 0
+    for k in range(n):
+        if len(nb[k]) != 1:
+            continue
+        j = nb[k][0]
+        pk = conf.GetAtomPosition(k); pj = conf.GetAtomPosition(j)
+        d = math.hypot(pk.x - pj.x, pk.y - pj.y)
+        if d < 1e-6 or d >= 0.85 * med:
+            continue
+        f = med / d
+        conf.SetAtomPosition(k, Point3D(pj.x + (pk.x - pj.x) * f, pj.y + (pk.y - pj.y) * f, 0.0))
+        fixed += 1
+    return fixed
 
 def normalize_pendant_rings(mol):
     """让所有"末端(叶)六元环"取向水平(0°/180°)、并把系链(连母核的键)拉长以缓解取代基拥挤；
@@ -81,7 +119,11 @@ def normalize_pendant_rings(mol):
         # 任一环原子属于 >=2 个环 -> 稠合/螺/桥联, 视为刚性母核不旋转
         return any(len(ringof.get(a, [])) > 1 for a in rings[ri])
 
-    SUBST_MAX = 5
+    SUBST_MAX = 12
+    # ★ 2026-11-05 对等升级(与检索站 app.js 同步): 5 -> 12 ——
+    # "2-苄氧基/2-苯硫基/2-苯氧基苯基"等联芳基的取代基片段含 7~8 原子, 旧上限 5 会把这些悬挂环
+    # 整个排除(连旋转都不做, 环歪 5~15°)。放宽到 12; 取代基里若还含另一悬挂环(嵌套),
+    # 本实现按"外环先转、内环后转"的顺序逐个绕各自 ipso 旋转, 坐标级复合天然正确。
     def is_leaf(ring_atoms):
         # 摘掉环原子后, 其余图必须仍基本连通(只允许 <=SUBST_MAX 的小取代基碎片孤立)
         rem = [True] * n
@@ -160,12 +202,26 @@ def normalize_pendant_rings(mol):
     for ri, ring_atoms, ip, anchor, frag, has_subst in jobs:
         ix, iy = _xy(ip)
         ax, ay = _xy(anchor)
-        # 取向目标: 让系链(ipso->anchor, 即官能团 C=N/炔/母核连接键)沿 ipso 处两条环键的外角平分线 =
-        # "环心->ipso"放射外向方向, 使系链与两条环键夹角相等(均 120°, 自然连接); 这等价于在"边水平(平顶)"
-        # 基础上转 30°, 专治"环通过 C=N/炔/等官能团连接时一边锐角一边钝角的怪角度"。
+        # ★ 2026-11-05 对等升级(与检索站 JS 工序二同口径): 径向方向改用"ipso 处两条环键方向的角平分线"的反向。
+        #   环心平均法在环上含杂原子(S/O/N)时会被其坐标带偏(检索站实测 123.4/116.5 而非 120/120);
+        #   角平分线只依赖 ipso 与两个 ortho 三点, 与环是否正多边形、是否含杂原子都无关。
+        #   正六边形下二者完全等价; 取不到三点才退回环心法。
+        ring_l = list(rings[ri])
+        ii = ring_l.index(ip)
+        o1 = ring_l[(ii + 1) % len(ring_l)]; o2 = ring_l[(ii - 1) % len(ring_l)]
+        o1x, o1y = _xy(o1); o2x, o2y = _xy(o2)
+        l1 = math.hypot(o1x - ix, o1y - iy); l2 = math.hypot(o2x - ix, o2y - iy)
         cxr0 = sum(_xy(a)[0] for a in ring_atoms) / len(ring_atoms)
         cyr0 = sum(_xy(a)[1] for a in ring_atoms) / len(ring_atoms)
-        rad_ang = math.atan2(iy - cyr0, ix - cxr0)   # 放射外向方向(指向远离环心)
+        if l1 > 1e-6 and l2 > 1e-6:
+            vx = -((o1x - ix) / l1 + (o2x - ix) / l2)
+            vy = -((o1y - iy) / l1 + (o2y - iy) / l2)
+            if math.hypot(vx, vy) > 1e-6:
+                rad_ang = math.atan2(vy, vx)           # 放射外向方向(角平分线反向)
+            else:
+                rad_ang = math.atan2(iy - cyr0, ix - cxr0)
+        else:
+            rad_ang = math.atan2(iy - cyr0, ix - cxr0)  # 环心法(退化兜底)
         anc_ang = math.atan2(ay - iy, ax - ix)         # 当前 anchor(系链)方向
         th0 = rad_ang - anc_ang
         # 在两种取向(th0=系链放射外向 与 th0+pi=系链指向环内)中选与母核/其余原子 clash 更少者 ->
@@ -230,6 +286,19 @@ def render(smiles, path):
     rdCoordGen.AddCoords(m)
     if m.GetConformer() is None:
         return False
+    # ★ 2026-11-05 对等升级(与检索站 JS 管线同步, 用户反馈的同一批根因):
+    # (1) 规范取向 —— coordgen 块坐标未做规范取向时整个分子斜着摆(检索站"整体歪斜"反馈);
+    #     StraightenDepiction 只做整体刚性旋转, 实测逐键长一个数都不变, 不破坏环几何。
+    if _HAVE_STRAIGHTEN:
+        try:
+            rdDepictor.StraightenDepiction(m)
+        except Exception:
+            pass
+    # (2) 端基键保护 —— coordgen 偶发把端基(度=1)键压到 0.8Å 画成半截(检索站"C=O 一长一短"反馈)。
+    try:
+        _lengthen_terminal_bonds(m)
+    except Exception:
+        pass
     # 悬挂(末端)六元环取向规范化: 让所有末端苯环水平(0°/180°), 视觉统一"正"
     normalize_pendant_rings(m)
     # 归一化：居中对齐 + 统一缩放，使所有结构重心居中、视觉大小一致、不贴边
