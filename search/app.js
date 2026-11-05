@@ -54,14 +54,20 @@ async function initRDKit(){
   }
 }
 
-/* ---------- 悬挂(末端)环放射外向取向规范化(与首页侧栏结构图同一画法) ----------
- * 规则: 让末端环"放射外向"——系链(连接键)沿"环心→ipso"的径向向外, 使系链与环上两邻键夹角相等(≈120°),
- *   取代基落在顶点而非边中点; 不再强行水平(用户: "很多时候你只考虑将苯环水平放置, 那是没有必要的")。
- * 实现: 不改坐标(WASM 不接受外部 2D 坐标), 对 RDKit.get_svg 产出的 SVG 做后处理。
- *   识别"真正悬挂的末端环"(仅一个母核连接点、不与其它环融合、去掉后分子其余仍连通),
- *   将其所属的全部图元(<path> 键线 + <text>/<path> 原子标签)整体包进一个 <g transform="rotate(...)">,
- *   绕 ipso 原子刚体旋转到放射外向取向。整组旋转 —— 数学上不断键、不丢标签、不产生游离黑点。
- *   融合母核/中心环绝不旋转; 若两种取向都会把邻位杂原子(如 ortho-F / CF3)压到母核上, 则放弃旋转保留 coordgen 原布局。 */
+/* ---------- 悬挂(末端)环"系链两侧夹角 = 90°+180°/n"(苯环即 120°/120°)规范化 ----------
+ * 用户要求: 悬挂苯环系链左右两个角度必须是 120°。coordgen 有两类偏差, 分两道工序处理:
+ * [工序一·重投影] 内部不规则(被压扁/拉伸)的环 —— 刚体旋转改变不了环顶点相对几何, 修不了;
+ *   故在 SVG 上直接改写坐标, 把环重投影为正 n 边形(系链为对称轴, ipso 原位不动, 环心在系链反侧):
+ *   两侧夹角精确 = 90°+180°/n。逐原子平移 Δ(环原子=新顶点-旧位置), 取代基随挂靠环原子整体平移;
+ *   环内键(含双键内侧线)按(旧a,旧b)->(新a,新b)相似变换重写 d, 标签字形与其余片断键按 Δ 平移,
+ *   无 class 小黑点三角按质心就近随 Δ 平移。安全阀: 已达标(误差<2°)不动; Δ>2.2 键长或新顶点
+ *   距母核原子<0.55 键长则放弃(留待工序二); 防镜像(shoelace 方向核验)。
+ * [工序二·刚体旋转] 内部已规则但取向偏离径向的环 —— 包 <g transform="rotate"> 绕 ipso 旋转到
+ *   "系链沿环心->ipso 径向"。关键(2026-11-05): 锚点方向用键线方向(_prpBondDir)而非锚点估计坐标 ——
+ *   RDKit 给 N/O 标签留位会把键线截短, 截短端点反推的锚点位置内缩 15~22px, 使方向偏差约 20°,
+ *   曾把本已外向的环额外旋转 20° 造成 142°/98° 歪斜("与N相连的苯环两个角度不是120°");
+ *   键线截短沿键轴故方向精确, 配合精确环原子位置即得 120°/120°。旋转时小黑点三角随质心归属一并转。
+ * 环检测: 仅"真正悬挂的末端环"(单连接点、不与它环融合、去环后其余连通、取代基≤5 原子)会被处理。 */
 function _prpParseV2000(blk){ const L=blk.split('\n'); const c=L[3].trim().split(/\s+/).map(Number); const nA=c[0],nB=c[1]; return {nAtoms:nA,nBonds:nB,atomLines:L.slice(4,4+nA),bondLines:L.slice(4+nA,4+nA+nB)}; }
 function _prpBuildAdj(bl,n){ const a=Array.from({length:n},()=>[]); for(const b of bl){const m=b.match(/^\s*(\d+)\s+(\d+)\s+(\d+)/); if(!m)continue; const x=+m[1]-1,y=+m[2]-1; a[x].push(y); a[y].push(x);} return a; }
 function _prpFindRings(adj,n,t){ const rings=[]; for(let s=0;s<n;s++){ const path=[s],ip=new Set([s]); (function dfs(v){ if(path.length===t){ if(adj[v].includes(s)) rings.push([...path]); return;} for(const nb of adj[v]){ if(nb===s||ip.has(nb))continue; ip.add(nb); path.push(nb); dfs(nb); path.pop(); ip.delete(nb);} })(s);} const u=[],seen=new Set(); for(const r of rings){const k=[...r].sort((a,b)=>a-b).join(','); if(!seen.has(k)){seen.add(k);u.push(r);}} return u; }
@@ -69,7 +75,197 @@ function _prpGetPaths(svg){ const re=/<path\b([^>]*)\/?>/g; const res=[]; let m;
 function _prpAtomsInClass(cls){ const s=new Set(); let m; const re=/atom-(\d+)/g; while((m=re.exec(cls))) s.add(+m[1]); return s; }
 function _prpBondEndpoints(d){ const e=[]; let m; const re=/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/g; while((m=re.exec(d))) e.push([parseFloat(m[1]),parseFloat(m[2])]); return e; }
 function _prpPtSegDist(p,a,b){ const vx=b[0]-a[0], vy=b[1]-a[1]; const wx=p[0]-a[0], wy=p[1]-a[1]; const c1=vx*wx+vy*wy; if(c1<=0) return Math.hypot(p[0]-a[0],p[1]-a[1]); const c2=vx*vx+vy*vy; if(c2<=c1) return Math.hypot(p[0]-b[0],p[1]-b[1]); const t=c1/c2; return Math.hypot(p[0]-(a[0]+t*vx),p[1]-(a[1]+t*vy)); }
-function _prpGetAtomPos(paths, k){ const segs=[]; const cands=[]; for(const p of paths){ if(!p.cls.includes('bond-')) continue; const ix=_prpAtomsInClass(p.cls); if(!ix.has(k)) continue; const e=_prpBondEndpoints(p.d); if(e.length<2) continue; for(let i=0;i+1<e.length;i+=2){ const a=e[i], b=e[i+1]; segs.push([a,b]); cands.push(a); cands.push(b); } } if(!segs.length) return null; const tol=2.5; let best=null,bestScore=0; for(const c of cands){ let score=0; for(const s of segs){ if(_prpPtSegDist(c,s[0],s[1])<=tol) score++; } if(score>bestScore){ bestScore=score; best=c; } } if(!best) return null; let sx=0,sy=0,n=0; for(const q of cands){ if(Math.hypot(best[0]-q[0],best[1]-q[1])<=tol){ sx+=q[0]; sy+=q[1]; n++; } } return n?[sx/n, sy/n] : best; }
+/* 顶点定位(碳原子用)。
+ * 判据: 顶点 = 被"最多条不同键路径共享"的候选端点。
+ * 关键修正(2026-11-05 三轮): 旧写法按"离多少条**线段**近(tol=2.5)"打分, 而芳香双键/三键的内侧平行线
+ *   是**装饰线**, 其端点根本不落在顶点上(实测侧向偏移 2.43px —— 恰好小于 2.5, 于是被当成与顶点重合);
+ *   结果内侧线端点拿到满分 3/3、真顶点只有 2/3, 顶点被内缩 1.4px, 正六边形被量成 111°/129° 的假相,
+ *   旋转角(依赖环心与 ipso)也随之偏 1~2°。
+ *   改判据后: 真顶点被 2~3 条**不同路径**共享, 内侧线端点只被它自己那 1 条路径共享 —— 天然胜出。
+ *   (tol 收紧到 1.0px: 只接受"几乎重合"的端点, 从而免疫平行线的 2~2.5px 侧向偏移。) */
+function _prpGetAtomPos(paths, k){
+  // 候选点 = 该原子各键路径的线段端点, 每个端点带一条"键轴方向"(按 mod 180° 归族)。
+  // 判据: 顶点处有 ≥2 条**不同直线**相交; RDKit 为给标签留位会把连向 N/O 的键在**中点拆成两段**,
+  //   中点只是同一条直线的延续 —— 只算 1 族, 不会被误判为顶点。
+  // (2026-11-05 实测: 旧"路径计数"判据让拆分的键中点以 2:2 平票取胜, 顶点被拉偏 9~12px。)
+  const c=[];
+  for(const p of paths){
+    if(p.cls.indexOf('bond-')<0) continue;
+    const ix=_prpAtomsInClass(p.cls); if(!ix.has(k)) continue;
+    const e=_prpBondEndpoints(p.d); if(e.length<2) continue;
+    for(let i=0;i+1<e.length;i+=2){
+      const A=e[i], B=e[i+1];
+      let f=Math.atan2(B[1]-A[1], B[0]-A[0]); f=((f%Math.PI)+Math.PI)%Math.PI;
+      c.push({x:A[0], y:A[1], fam:f});
+      c.push({x:B[0], y:B[1], fam:f});
+    }
+  }
+  if(!c.length) return null;
+  const TOL=1.0, FAMTOL=18*Math.PI/180;
+  let best=null, bestScore=-1;
+  for(const q of c){
+    const fams=[];
+    for(const r of c){
+      if(Math.hypot(r.x-q.x, r.y-q.y)>TOL) continue;
+      let dup=false;
+      for(const f of fams){ let d=Math.abs(f-r.fam); d=Math.min(d, Math.PI-d); if(d<FAMTOL){ dup=true; break; } }
+      if(!dup) fams.push(r.fam);
+    }
+    if(fams.length>bestScore){
+      bestScore=fams.length;
+      let sx=0, sy=0, n=0;
+      for(const r of c){ if(Math.hypot(r.x-q.x, r.y-q.y)<=TOL){ sx+=r.x; sy+=r.y; n++; } }
+      best=[sx/n, sy/n];
+    }
+  }
+  return best;
+}
+// 块坐标(y 向上) -> SVG(y 向下) 的相似变换稳健拟合(IRLS/Cauchy 权重, 镜像+旋转+缩放+平移)。
+// 实测: 400 个分子上残差中位数 0.05px —— 即 RDKit 的 get_svg 只是把块坐标做了相似变换(缩放/旋转/平移),
+// 因此"块坐标经变换"就是每个原子在 SVG 里的**精确**位置, 完全免疫标签截短、双键内侧线、键被中点拆段等干扰。
+function _prpFitSim(B, S){
+  const n=B.length; if(n<3) return null;
+  let w=new Array(n).fill(1), st=null;
+  for(let it=0; it<10; it++){
+    let sw=0, mbx=0, mby=0, msx=0, msy=0;
+    for(let i=0;i<n;i++){ sw+=w[i]; mbx+=w[i]*B[i][0]; mby+=w[i]*B[i][1]; msx+=w[i]*S[i][0]; msy+=w[i]*S[i][1]; }
+    if(!(sw>0)) return null;
+    mbx/=sw; mby/=sw; msx/=sw; msy/=sw;
+    let num=0, den=0;
+    for(let i=0;i<n;i++){ const bx=B[i][0]-mbx, by=-(B[i][1]-mby), sx=S[i][0]-msx, sy=S[i][1]-msy;
+      num+=w[i]*(bx*sy-by*sx); den+=w[i]*(bx*sx+by*sy); }
+    if(Math.abs(den)<1e-12 && Math.abs(num)<1e-12) return null;
+    const th=Math.atan2(num,den), ca=Math.cos(th), sa=Math.sin(th);
+    let sN=0, sD=0;
+    for(let i=0;i<n;i++){ const bx=B[i][0]-mbx, by=-(B[i][1]-mby);
+      const rx=bx*ca-by*sa, ry=bx*sa+by*ca; const sx=S[i][0]-msx, sy=S[i][1]-msy;
+      sN+=w[i]*(rx*sx+ry*sy); sD+=w[i]*(rx*rx+ry*ry); }
+    if(!(sD>1e-12)) return null;
+    const sc=sN/sD;
+    if(!isFinite(sc)||sc<=0) return null;
+    const res=new Array(n);
+    for(let i=0;i<n;i++){ const bx=B[i][0]-mbx, by=-(B[i][1]-mby);
+      const rx=bx*ca-by*sa, ry=bx*sa+by*ca;
+      res[i]=Math.hypot(S[i][0]-(msx+sc*rx), S[i][1]-(msy+sc*ry)); }
+    const sorted=res.slice().sort((a,b)=>a-b), med=sorted[Math.floor(n/2)];
+    const sig=Math.max(0.3, 1.4826*med);
+    for(let i=0;i<n;i++){ const z=res[i]/(2.5*sig); w[i]=1/(1+z*z); }
+    st={mbx,mby,msx,msy,ca,sa,sc,med};
+  }
+  if(!st) return null;
+  const T=(p)=>{ const bx=p[0]-st.mbx, by=-(p[1]-st.mby);
+    return [st.msx+st.sc*(bx*st.ca-by*st.sa), st.msy+st.sc*(bx*st.sa+by*st.ca)]; };
+  T.med=st.med; T.scale=st.sc; T.deg=Math.atan2(st.sa,st.ca)*180/Math.PI;
+  return T;
+}
+// 每个原子的 SVG 精确位置: 先用键线交点(度>=2 的原子可靠)拟合相似变换, 再由块坐标预测全部原子。
+function _prpPositions(paths, P){
+  const pos=new Array(P.nAtoms).fill(null);
+  const base=new Array(P.nAtoms).fill(null);
+  const deg=new Array(P.nAtoms).fill(0);
+  for(const b of P.bondLines){ const m=b.match(/^\s*(\d+)\s+(\d+)\s+(\d+)/); if(!m) continue; deg[+m[1]-1]++; deg[+m[2]-1]++; }
+  const blkPos=(k)=>{ const L=(P.atomLines[k]||'').trim().split(/\s+/).map(Number); return [L[0],L[1]]; };
+  const B=[], S=[];
+  for(let k=0;k<P.nAtoms;k++){
+    let s=null;
+    try{ s=_prpAtomExact(paths,k); }catch(e){ s=null; }
+    base[k]=s;
+    if(s && deg[k]>=2 && isFinite(s[0]) && isFinite(s[1])){ B.push(blkPos(k)); S.push(s); }
+  }
+  if(B.length>=3){
+    const T=_prpFitSim(B,S);
+    if(T && T.med<3.5){
+      for(let k=0;k<P.nAtoms;k++){ const q=blkPos(k); pos[k]=[T(q)[0], T(q)[1]]; }
+    }
+  }
+  for(let k=0;k<P.nAtoms;k++) if(!pos[k]) pos[k]=base[k];
+  return pos;
+}
+// ipso->锚点 键线方向(精确): RDKit 对连向 N/O 等标签原子的键线做了"截短"(沿键轴), 但方向不变。
+// 取该键全部路径端点中"离 ipso 最远"的一簇(距最远点 3px 内)做平均 —— 既得键轴方向, 又抵消双键双线的侧向偏移。
+function _prpBondDir(paths, a, b, ipP){
+  const pts=[];
+  for(const p of paths){
+    if(p.cls.indexOf('bond-')<0) continue;
+    const at=_prpAtomsInClass(p.cls);
+    if(!(at.has(a)&&at.has(b))) continue;
+    const e=_prpBondEndpoints(p.d);
+    for(const q of e) pts.push(q);
+  }
+  if(pts.length<2) return null;
+  let D2=-1;
+  for(const q of pts){ const d2=(q[0]-ipP[0])*(q[0]-ipP[0])+(q[1]-ipP[1])*(q[1]-ipP[1]); if(d2>D2) D2=d2; }
+  const D=Math.sqrt(D2), lim=Math.max(0,D-3)*Math.max(0,D-3);
+  let sx=0,sy=0,n=0;
+  for(const q of pts){ const d2=(q[0]-ipP[0])*(q[0]-ipP[0])+(q[1]-ipP[1])*(q[1]-ipP[1]); if(d2>=lim){ sx+=q[0]; sy+=q[1]; n++; } }
+  if(!n) return null;
+  return Math.atan2(sy/n-ipP[1], sx/n-ipP[0]);
+}
+// 杂原子精定位: 用"该原子各键的轴线的最小二乘交点"求中心。
+//   动机(2026-11-05): 字形 bbox 中心对 N/O 有 2~4px 系统偏差(字母有上下伸展, bbox 不等于字面几何中心),
+//   这会把含杂原子环的环心带偏、把重投影顶点带偏, 并把该处内部角量成 136°/104° 的假象。
+//   键线在标签处被"沿键轴截短", 但轴线方向不变; 且每条键取**最长线段**(主线), 双键内侧平行线更短会被排除;
+//   再要求该线段一端几乎落在另一原子的精确位置上(碳定位精确), 从而剔除偏移的内侧线。多键轴线交点即原子中心。
+function _prpAxisPos(paths, k){
+  const L=[];
+  for(const p of paths){
+    if(p.cls.indexOf('bond-')<0) continue;
+    const at=[..._prpAtomsInClass(p.cls)];
+    if(at.length!==2 || at.indexOf(k)<0) continue;
+    const oth=(at[0]===k)?at[1]:at[0];
+    const op=_prpGetAtomPos(paths, oth); if(!op) continue;
+    const e=_prpBondEndpoints(p.d); if(e.length<2) continue;
+    let bs=null, bl=-1;
+    for(let i=0;i+1<e.length;i+=2){ const len=Math.hypot(e[i+1][0]-e[i][0], e[i+1][1]-e[i][1]); if(len>bl){ bl=len; bs=[e[i],e[i+1]]; } }
+    if(!bs || bl<1e-6) continue;
+    const d0=Math.hypot(bs[0][0]-op[0], bs[0][1]-op[1]), d1=Math.hypot(bs[1][0]-op[0], bs[1][1]-op[1]);
+    let ref, dx, dy;
+    if(d0<=d1 && d0<2.0){ ref=bs[0]; dx=bs[1][0]-bs[0][0]; dy=bs[1][1]-bs[0][1]; }
+    else if(d1<d0 && d1<2.0){ ref=bs[1]; dx=bs[0][0]-bs[1][0]; dy=bs[0][1]-bs[1][1]; }
+    else continue;                                  // 两端都不贴另一原子中心 -> 内侧平行线, 弃用
+    const dl=Math.hypot(dx,dy); if(dl<1e-6) continue;
+    L.push({x:ref[0], y:ref[1], nx:-dy/dl, ny:dx/dl});
+  }
+  if(L.length<2) return null;
+  let a11=0,a12=0,a22=0,b1=0,b2=0;
+  for(const l of L){
+    a11+=l.nx*l.nx; a12+=l.nx*l.ny; a22+=l.ny*l.ny;
+    const c=l.nx*l.x+l.ny*l.y; b1+=l.nx*c; b2+=l.ny*c;
+  }
+  const det=a11*a22-a12*a12;
+  if(Math.abs(det)<1e-9) return null;
+  const x=(a22*b1-a12*b2)/det, y=(a11*b2-a12*b1)/det;
+  if(!isFinite(x)||!isFinite(y)) return null;
+  return [x,y];
+}
+// 杂原子标签字形中心(兜底): RDKit 把 N/O/P 等标签画成 <path class='atom-k' d='...字形轮廓...'>(绝对坐标)。
+// 碳原子无标签, 形状路径不存在, 返回 null。
+function _prpLabelPos(paths, k){
+  const key='atom-'+k;
+  for(const p of paths){
+    if(p.cls.indexOf('bond-')>=0) continue;
+    const at=_prpAtomsInClass(p.cls);
+    if(at.size!==1 || !at.has(k)) continue;
+    if(p.cls.indexOf(key)<0) continue;
+    const nums=[]; const re=/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/g; let m;
+    while((m=re.exec(p.d))) nums.push([parseFloat(m[1]),parseFloat(m[2])]);
+    if(nums.length<2) continue;
+    let mnx=1e9,mny=1e9,mxx=-1e9,mxy=-1e9;
+    for(const q of nums){ if(q[0]<mnx)mnx=q[0]; if(q[0]>mxx)mxx=q[0]; if(q[1]<mny)mny=q[1]; if(q[1]>mxy)mxy=q[1]; }
+    const gc=[(mnx+mxx)/2,(mny+mxy)/2];
+    const ax=_prpAxisPos(paths, k);                 // 优先用键轴交点(更准); 与字形中心差太多则不信
+    if(ax && Math.hypot(ax[0]-gc[0], ax[1]-gc[1])<6) return ax;
+    return gc;
+  }
+  return null;
+}
+// 精确原子坐标: 带标签的杂原子 → 字形中心; 无标签的碳 → _prpGetAtomPos(碳原子无截短, 各键在顶点精确共点)。
+// 说明: 不用"平行双线平均/直线求交"——双键的内侧平行线是自带侧向偏移的装饰线, 取平均会偏离真实顶点。
+function _prpAtomExact(paths, k){
+  const lp=_prpLabelPos(paths, k);
+  if(lp) return lp;
+  return _prpGetAtomPos(paths, k);
+}
 
 function postRotatePendantRings(svg, blk){
   if(!svg || !blk) return svg;
@@ -106,24 +302,177 @@ function postRotatePendantRings(svg, blk){
       if((u===tether.ip&&nb===tether.anchor)||(u===tether.anchor&&nb===tether.ip)) continue;
       frag.add(nb); q.push(nb); } }
     if(frag.size > Math.max(8, Math.floor(P.nAtoms*0.6))) continue;
-    jobs.push({ringIdx:ri, ringAtoms, tether, frag});
+    // 环的循环序(ipso 转到首位): rings[ri] 相邻元素成环(含首尾闭合)
+    const cycIdx=rings[ri].indexOf(tether.ip);
+    const cyc=rings[ri].slice(cycIdx).concat(rings[ri].slice(0,cycIdx));
+    jobs.push({ringIdx:ri, ringAtoms, tether, frag, cyc});
   }
   if(!jobs.length) return svg;
   const paths0=_prpGetPaths(svg);
   const ap={}; const getPos=(a)=>{ if(ap[a]!==undefined) return ap[a]; const p=_prpGetAtomPos(paths0,a); ap[a]=p||null; return ap[a]; };
-  // 逐 job 计算"放射外向"角(SVG 空间)。叶子(悬挂)末端环只经单键与母核相连, 绕 ipso 刚体旋转到
-  // "系链沿环心->ipso 径向向外"即可; 此时环必落在锚点反侧(远离母核), 不会产生重叠,
-  // 故取消 clash 避让与 180° 翻转(th0blk/+π 翻转会把环翻到母核一侧, 既压叠又使夹角歪斜)。
+  // 全部原子的精确 SVG 位置(块坐标经稳健相似变换预测); 后续所有几何量都用它, 不再逐个"猜顶点"。
+  const AP=_prpPositions(paths0, P);
+
+  // ── 预处理: 内部不规则(被压扁/拉伸)的悬挂环 —— 刚体旋转不改变环顶点相对几何, 修不了这种歪斜,
+  //    直接在 SVG 上把环重投影为正 n 边形(系链为对称轴, ipso 原位不动, 环心落在系链反侧):
+  //    两侧夹角精确 = 90°+180°/n(苯环 120°/120°)。已达标(误差<2°)的环不动, 留给下方刚体旋转。──
+  const dd=(x)=>{ let d=((x)%360+540)%360-180; return d; };
+  const area2=(pts)=>{ let A=0; for(let k=0;k<pts.length;k++){ const p=pts[k], q2=pts[(k+1)%pts.length]; A+=p[0]*q2[1]-q2[0]*p[1]; } return A; };
+  const delta=new Array(P.nAtoms).fill(null);
+  const doneJobs=[];
   for(const j of jobs){
+    const n=j.cyc.length;
     const {ip, anchor}=j.tether;
-    const ipP=getPos(ip); if(!ipP){ j.th=null; continue; }
-    const anP=getPos(anchor); if(!anP){ j.th=null; continue; }
-    let cx=0,cy=0,nn=0; for(const a of j.ringAtoms){ const p=getPos(a); if(p){ cx+=p[0]; cy+=p[1]; nn++; } }
-    if(!nn){ j.th=null; continue; } cx/=nn; cy/=nn;
-    const radAng=Math.atan2(ipP[1]-cy, ipP[0]-cx);        // SVG: 环心->ipso 向外
-    const ancAng=Math.atan2(anP[1]-ipP[1], anP[0]-ipP[0]); // SVG: ipso->anchor 当前方向
+    const ipP=AP[ip] || getPos(ip);
+    if(!ipP) continue;
+    const pos={}; let ok=true;
+    for(const a of j.cyc){ const p=AP[a] || getPos(a); if(!p){ ok=false; break; } pos[a]=p; }
+    if(!ok) continue;
+    const o1=j.cyc[1], o2=j.cyc[n-1];
+    let tA=_prpBondDir(paths0, ip, anchor, ipP);
+    if(tA==null){ const anP=getPos(anchor); if(!anP) continue; tA=Math.atan2(anP[1]-ipP[1], anP[0]-ipP[0]); }
+    const b1=Math.atan2(pos[o1][1]-ipP[1], pos[o1][0]-ipP[0]);
+    const b2=Math.atan2(pos[o2][1]-ipP[1], pos[o2][0]-ipP[0]);
+    const a1=Math.abs(dd((b1-tA)*180/Math.PI)), a2=Math.abs(dd((b2-tA)*180/Math.PI));
+    const target=90+180/n;                       // 正 n 边形悬挂环: 系链两侧夹角
+    if(Math.abs(a1-target)<2 && Math.abs(a2-target)<2) continue;   // 已达标, 不动
+    // 环平均键长 / 环半径 / 理想顶点(环心在系链反侧 -> 环背向母核张开)
+    let s=0; for(let k=0;k<n;k++){ const p=pos[j.cyc[k]], q2=pos[j.cyc[(k+1)%n]]; s+=Math.hypot(q2[0]-p[0],q2[1]-p[1]); } s/=n;
+    if(s<1e-6) continue;
+    const R=s/(2*Math.sin(Math.PI/n));
+    const C=[ipP[0]-Math.cos(tA)*R, ipP[1]-Math.sin(tA)*R];
+    let V=[]; for(let k=0;k<n;k++){ const a=tA+2*Math.PI*k/n; V.push([C[0]+R*Math.cos(a), C[1]+R*Math.sin(a)]); }
+    // 防镜像: 旧环循环序与理想顶点序的 shoelace 符号若相反, 只翻 cyc 尾序(ipso 保持首位), V 不动。
+    // ★ 坑(2026-11-05): cyc 与 V 若"同步翻转"则两次翻转相消 = 完全没翻, 环原子拿到镜像侧顶点
+    //   (实测: 9-(2-甲基苯基)吖啶二酮 atom2 应去 V5(old2≈V5 实测重合), 同步翻转后去了 V1,
+    //   位移 48px, 环被拉成自交形, ipso 夹角塌成 4°/116°)。仅翻 cyc 才是正确的镜像校正。
+    //   (此前自交星形另有元凶: _sim 虚部符号反了(带镜像的相似变换), 已单独修正, 与本翻转无关。)
+    const oldPts=j.cyc.map(a=>pos[a]);
+    if(area2(oldPts)*area2(V)<0){
+      j.cyc=[j.cyc[0]].concat(j.cyc.slice(1).reverse());
+    }
+    // 逐原子平移增量 Δ(环原子=新顶点-旧位置)
+    const dl={}; for(let k=0;k<n;k++){ const a=j.cyc[k]; dl[a]=[V[k][0]-pos[a][0], V[k][1]-pos[a][1]]; }
+    let maxd=0; for(const a of j.cyc) maxd=Math.max(maxd, Math.hypot(dl[a][0],dl[a][1]));
+    if(maxd>2.2*s) continue;                     // 增量异常: 放弃重投影(留待旋转兜底)
+    // 悬挂取代基随挂靠环原子整体平移(BFS 自环原子向片断传播)
+    { const seen=new Set(j.cyc); const q2=[...j.cyc];
+      while(q2.length){ const x=q2.shift(); for(const nb of adj[x]){
+        if(j.frag.has(nb)&&!seen.has(nb)){ seen.add(nb); dl[nb]=dl[x].slice(); q2.push(nb); } } } }
+    // 碰撞核验: 新顶点不得贴近母核原子
+    let clash=false;
+    outer: for(let k=0;k<n;k++){
+      for(let ci=0; ci<P.nAtoms; ci++){
+        if(j.frag.has(ci)) continue;
+        const cp=getPos(ci); if(!cp) continue;
+        if(Math.hypot(V[k][0]-cp[0], V[k][1]-cp[1])<0.55*s){ clash=true; break outer; }
+      }
+    }
+    if(clash) continue;
+    for(const a of j.frag){ if(dl[a]) delta[a]=dl[a]; }
+    j.done=true; j.th=null; j.posX=pos;           // 已处理: 下方刚体旋转跳过
+    doneJobs.push(j);
+  }
+  if(doneJobs.length){
+    // 改写这些环的路径坐标: 环内键(含双键内侧线, 与主线同 class)按(旧a,旧b)->(新a,新b)相似变换;
+    // 其余片断图元/杂原子标签字形按 Δ 平移; 无 class 小黑点三角按质心就近随 Δ 平移(否则残留旧顶点成游离黑点)。
+    const _fmt=(v)=>{ const r2=Math.round(v*100)/100; return (Math.abs(r2)<1e-9?0:r2).toFixed(2); };
+    const _sim=(oa,ob,na,nb)=>{ const vx=ob[0]-oa[0], vy=ob[1]-oa[1]; const L2=vx*vx+vy*vy;
+      if(L2<1e-9) return null;
+      const dx=nb[0]-na[0], dy=nb[1]-na[1];
+      // 相似变换 w = d·conj(v)/|v|² : 实部=(d·v)/|v|², 虚部=(dy·vx - dx·vy)/|v|²。
+      // ★ 坑(2026-11-05): 虚部原写作 (dx·vy - dy·vx)/|v|², 符号反了 → 该变换**带镜像**(定向反转),
+      //   于是 ob 并不映射到 nb, 相邻两条键对同一顶点给出不同坐标(实测错开约 4px),
+      //   环被拆成自交星形、内部角变成 90/90/120/120/90/90。
+      const sc=(dx*vx+dy*vy)/L2;
+      const ss=(dy*vx-dx*vy)/L2;
+      return (p)=>{ const ex=p[0]-oa[0], ey=p[1]-oa[1];
+        return [na[0]+sc*ex-ss*ey, na[1]+ss*ex+sc*ey]; }; };
+    const _rwD=(d, xf)=>{ const nums=[]; d.replace(/-?\d+\.?\d*/g,t=>{nums.push(parseFloat(t)); return t;});
+      if(nums.length<2 || nums.length%2!==0) return null;
+      for(let k=0;k<nums.length;k+=2){ const p=xf([nums[k],nums[k+1]]); nums[k]=p[0]; nums[k+1]=p[1]; }
+      let idx=0; return d.replace(/-?\d+\.?\d*/g, ()=>_fmt(nums[idx++])); };
+    svg = svg.replace(/<path\b[^>]*\/?>/g, (tag)=>{
+      const cls=(tag.match(/class='([^']*)'/)||[])[1]||'';
+      const d=(tag.match(/d='([^']*)'/)||[])[1]||'';
+      if(!d) return tag;
+      const atoms=[]; { let mm; const reA=/atom-(\d+)/g; while((mm=reA.exec(cls))) atoms.push(+mm[1]); }
+      const uniq=[...new Set(atoms)];
+      let xf=null;
+      if(!uniq.length){
+        // 无 class 小黑点三角: 质心就近挂在某带 Δ 的片断原子上随其平移
+        if(!/fill:none/.test((tag.match(/style='([^']*)'/)||[])[1]||'')) return tag;
+        const pts=(d.match(/(-?\d+\.?\d*),(-?\d+\.?\d*)/g)||[]);
+        if(pts.length<3) return tag;
+        const nums0=pts.map(t=>t.split(',').map(Number));
+        let cxm=0,cym=0; for(const q2 of nums0){ cxm+=q2[0]; cym+=q2[1]; } cxm/=nums0.length; cym/=nums0.length;
+        let bestA=null, bestD=8;
+        for(let a=0;a<P.nAtoms;a++){ if(!delta[a]) continue; const p=getPos(a); if(!p) continue;
+          const dd2=Math.hypot(p[0]-cxm,p[1]-cym); if(dd2<bestD){ bestD=dd2; bestA=a; } }
+        if(bestA===null) return tag;
+        xf=(p)=>[p[0]+delta[bestA][0], p[1]+delta[bestA][1]];
+      } else if(uniq.length>2 || !uniq.some(a=>delta[a])){
+        return tag;                               // 不在任何重投影片断内
+      } else if(uniq.length===2 && delta[uniq[0]] && delta[uniq[1]]){
+        // 两原子均带 Δ: 同属某 done 环的环内键 -> 相似变换; 否则(环->取代基/取代基内部键, Δ相同)平移
+        let jj=null;
+        for(const j2 of doneJobs){ if(j2.ringAtoms.has(uniq[0]) && j2.ringAtoms.has(uniq[1])){ jj=j2; break; } }
+        if(jj){
+          const oa=jj.posX[uniq[0]], ob=jj.posX[uniq[1]];
+          if(oa&&ob){
+            xf=_sim(oa, ob, [oa[0]+delta[uniq[0]][0], oa[1]+delta[uniq[0]][1]],
+                         [ob[0]+delta[uniq[1]][0], ob[1]+delta[uniq[1]][1]]);
+          }
+        }
+        if(!xf){ const a0=uniq[0]; xf=(p)=>[p[0]+delta[a0][0], p[1]+delta[a0][1]]; }
+      } else {
+        const a0=uniq.find(x=>delta[x]);
+        xf=(p)=>[p[0]+delta[a0][0], p[1]+delta[a0][1]];
+      }
+      if(!xf) return tag;
+      const nd=_rwD(d, xf);
+      if(nd===null) return tag;
+      return tag.replace(/d='[^']*'/, "d='"+nd+"'");
+    });
+  }
+
+  // 关键修正(2026-11-05): 锚点方向改用 "ipso->锚点 键线方向"(精确) 计算, 不再用锚点估计坐标。
+  //   根因: RDKit 为给 N/O 等杂原子标签留位, 会把连向它们的键线"截短"; 用截短端点反推的 N/O 位置系统性内缩
+  //         (实测偏 15~22 px), 使 ancAng 偏差约 20°, 把 coordgen 本已"放射外向"的悬挂环额外旋转约 20°,
+  //         造成 ipso 处两邻键夹角 142°/98° 的歪斜 —— 即用户所见"与N相连的苯环两个角度不是120°"。
+  //         锚点为碳(无标签、不截短)的环不受影响 —— 故"有些库完全正常、有些库普遍歪斜"。
+  //   键线被截短的方向沿键轴, 故 bond 方向本身精确; 配合环心/ipso(均为环碳, 不截短)即得 120°/120°。
+  for(const j of jobs){
+    if(j.done) continue;                          // 已在上方重投影处理
+    const {ip, anchor}=j.tether;
+    const ipP=AP[ip] || getPos(ip); if(!ipP){ j.th=null; continue; }
+    j.ipPos=ipP;                                              // 旋转轴心(精确)
+    // 放射方向(指向环外) = ipso 处两条环键方向的"角平分线"的反向。
+    // ★ 2026-11-05: 原来用"环心->ipso", 环心取环原子平均; 环上若有杂原子(N/O/S), 其标签字形中心
+    //   有 2~4px 系统偏差, 把环心带偏约 1.6px → 旋转角偏 3.4°, 实测 tether=(123.4,116.5) 而不是 120/120。
+    //   角平分线只依赖 ipso 与两个 ortho 三点(均为环碳, 顶点定位精确), 与杂原子位置、环是否正多边形都无关;
+    //   正六边形下二者完全等价。取不到三点时才退回环心法。
+    let radAng=null;
+    { const n=j.cyc.length, o1=j.cyc[1], o2=j.cyc[n-1];
+      const pO1=AP[o1]||getPos(o1), pO2=AP[o2]||getPos(o2);
+      if(pO1&&pO2){
+        const L1=Math.hypot(pO1[0]-ipP[0],pO1[1]-ipP[1]), L2=Math.hypot(pO2[0]-ipP[0],pO2[1]-ipP[1]);
+        if(L1>1e-6&&L2>1e-6){
+          const vx=-((pO1[0]-ipP[0])/L1+(pO2[0]-ipP[0])/L2);
+          const vy=-((pO1[1]-ipP[1])/L1+(pO2[1]-ipP[1])/L2);
+          if(Math.hypot(vx,vy)>1e-6) radAng=Math.atan2(vy,vx);
+        }
+      } }
+    if(radAng==null){
+      let cx=0,cy=0,nn=0;
+      for(const a of j.ringAtoms){ const p=AP[a] || getPos(a); if(p){ cx+=p[0]; cy+=p[1]; nn++; } }
+      if(!nn){ j.th=null; continue; } cx/=nn; cy/=nn;
+      radAng=Math.atan2(ipP[1]-cy, ipP[0]-cx);                // SVG: 环心->ipso 向外(环原子精确, 含杂环)
+    }
+    let ancAng=_prpBondDir(paths0, ip, anchor, ipP);          // SVG: ipso->锚点 键线方向(精确, 免疫标签截短)
+    if(ancAng==null){ const anP=getPos(anchor); if(!anP){ j.th=null; continue; } ancAng=Math.atan2(anP[1]-ipP[1], anP[0]-ipP[0]); }
     const th0svg=radAng-ancAng;
-    // 注意: SVG 坐标(y 向下)与块坐标(y 向上)互为镜像, 旋转方向相反; 与 Python 侧栏管线(直接旋转 y-↑ 坐标)对齐需取负号。
+    // SVG 坐标(y 向下)与块坐标(y 向上)互为镜像; 此处角均在 SVG 空间, 直接用 -th0svg(旧式), 不再反向。
     j.th=-th0svg;
   }
   // 收集所有图元(<path> 与 <text>), 判定归属哪个 job 的片断
@@ -163,7 +512,7 @@ function postRotatePendantRings(svg, blk){
   for(const e of removeSet){ svg = svg.slice(0,e.start) + svg.slice(e.end); }
   const groups=[];
   for(let ji=0; ji<jobs.length; ji++){ const j=jobs[ji]; if(j.th===null) continue;
-    const ipP=getPos(j.tether.ip); if(!ipP) continue;
+    const ipP=j.ipPos || getPos(j.tether.ip); if(!ipP) continue;
     const deg=j.th*180/Math.PI;
     const inner=removeSet.filter(e=>e.owner===ji).map(e=>e.full).join('');
     if(!inner) continue;
@@ -230,10 +579,19 @@ function molToSVG(smiles){
     try { mol = RDKit.get_mol(c); } catch(e){ mol = null; }
     if (!mol) continue;
     try {
-      const svg0 = mol.get_svg(250, 195);
+      // 关键修正(2026-11-05): 直接 mol.get_svg() 在大/拥挤分子上会用 RDKit 内部坐标, 把苯环画成非正六边形
+      //   (实测 41 原子分子内角 101~139°); 改用 coordgen 块坐标(get_new_coords)重建分子后再绘制,
+      //   苯环恒为正六边形 120°(同一分子实测从 101/139 修复为全 120)。坐标由 coordgen 保证规整。
+      let blk = null;
+      try { blk = mol.get_new_coords(); } catch(e){ blk = null; }
+      let svg0 = null, molFromBlk = null;
+      if (blk){ try { molFromBlk = RDKit.get_mol(blk); } catch(e){ molFromBlk = null; } }
+      try { svg0 = (molFromBlk || mol).get_svg(250, 195); } catch(e){ svg0 = null; }
+      if (svg0 == null) svg0 = mol.get_svg(250, 195);
       let svg = svg0;
-      try { const blk = mol.get_new_coords(); svg = postRotatePendantRings(svg0, blk); } catch(e){}
+      if (blk){ try { svg = postRotatePendantRings(svg0, blk); } catch(e){} }
       svg = stripStrayDots(svg);
+      if (molFromBlk){ try{ molFromBlk.delete(); }catch(e){} }
       mol.delete();
       return svg;
     } catch(e){ if (mol) mol.delete(); }
