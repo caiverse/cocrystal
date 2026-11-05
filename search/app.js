@@ -108,11 +108,11 @@ function postRotatePendantRings(svg, blk){
     jobs.push({ringIdx:ri, ringAtoms, tether, frag});
   }
   if(!jobs.length) return svg;
-  const blkXY=(i)=>{ const f=P.atomLines[i].trim().split(/\s+/); return [parseFloat(f[0]), parseFloat(f[1])]; };
-  const blkElem=(i)=>{ const f=P.atomLines[i].trim().split(/\s+/); return (f[3]||'C'); };
   const paths0=_prpGetPaths(svg);
   const ap={}; const getPos=(a)=>{ if(ap[a]!==undefined) return ap[a]; const p=_prpGetAtomPos(paths0,a); ap[a]=p||null; return ap[a]; };
-  // 逐 job 计算"放射外向"角(SVG 空间) + clash 选择(块坐标空间)
+  // 逐 job 计算"放射外向"角(SVG 空间)。叶子(悬挂)末端环只经单键与母核相连, 绕 ipso 刚体旋转到
+  // "系链沿环心->ipso 径向向外"即可; 此时环必落在锚点反侧(远离母核), 不会产生重叠,
+  // 故取消 clash 避让与 180° 翻转(th0blk/+π 翻转会把环翻到母核一侧, 既压叠又使夹角歪斜)。
   for(const j of jobs){
     const {ip, anchor}=j.tether;
     const ipP=getPos(ip); if(!ipP){ j.th=null; continue; }
@@ -122,22 +122,8 @@ function postRotatePendantRings(svg, blk){
     const radAng=Math.atan2(ipP[1]-cy, ipP[0]-cx);        // SVG: 环心->ipso 向外
     const ancAng=Math.atan2(anP[1]-ipP[1], anP[0]-ipP[0]); // SVG: ipso->anchor 当前方向
     const th0svg=radAng-ancAng;
-    const ipB=blkXY(ip), anB=blkXY(anchor);
-    let cxb=0,cyb=0; for(const a of j.ringAtoms){ const xy=blkXY(a); cxb+=xy[0]; cyb+=xy[1]; } cxb/=j.ringAtoms.size; cyb/=j.ringAtoms.size;
-    const radB=Math.atan2(ipB[1]-cyb, ipB[0]-cxb);
-    const ancB=Math.atan2(anB[1]-ipB[1], anB[0]-ipB[0]);
-    const th0blk=radB-ancB;
-    const clashFor=(th)=>{ const c=Math.cos(th), s=Math.sin(th); let n=0;
-      for(const fa of j.frag){ if(blkElem(fa)==='C') continue; const xy=blkXY(fa);
-        const rx=ipB[0]+(xy[0]-ipB[0])*c-(xy[1]-ipB[1])*s;
-        const ry=ipB[1]+(xy[0]-ipB[0])*s+(xy[1]-ipB[1])*c;
-        for(let o=0;o<P.nAtoms;o++){ if(j.frag.has(o)) continue; if(blkElem(o)==='C') continue; if(adj[fa].includes(o)) continue;
-          if(Math.hypot(rx-blkXY(o)[0], ry-blkXY(o)[1])<0.5) n++; } }
-      return n; };
-    const c0=clashFor(th0blk), c1=clashFor(th0blk+Math.PI);
-    if(Math.min(c0,c1)>0){ j.th=null; continue; }   // 两种取向都 clash -> 放弃旋转, 保留 coordgen 布局
     // 注意: SVG 坐标(y 向下)与块坐标(y 向上)互为镜像, 旋转方向相反; 与 Python 侧栏管线(直接旋转 y-↑ 坐标)对齐需取负号。
-    j.th=(c0<=c1)? -th0svg : -th0svg+Math.PI;
+    j.th=-th0svg;
   }
   // 收集所有图元(<path> 与 <text>), 判定归属哪个 job 的片断
   const elems=[]; let m;
