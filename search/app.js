@@ -74,7 +74,8 @@ function _prpGetAtomPos(paths, k){ const segs=[]; const cands=[]; for(const p of
 function postRotatePendantRings(svg, blk){
   if(!svg || !blk) return svg;
   const P=_prpParseV2000(blk); const adj=_prpBuildAdj(P.bondLines,P.nAtoms);
-  const rings=_prpFindRings(adj,P.nAtoms,6);
+  const rings=[];
+  for(const t of [3,4,5,6,7,8]){ for(const r of _prpFindRings(adj,P.nAtoms,t)) rings.push(r); }
   const atomRings=Array.from({length:P.nAtoms},()=>[]);
   rings.forEach((r,i)=>{ for(const a of r) atomRings[a].push(i); });
   const sharesAtom=(ri)=>{ for(const a of rings[ri]) if(atomRings[a].length>1) return true; return false; };
