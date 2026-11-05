@@ -69,6 +69,30 @@ async function initRDKit(){
  *   键线截短沿键轴故方向精确, 配合精确环原子位置即得 120°/120°。旋转时小黑点三角随质心归属一并转。
  * 环检测: 仅"真正悬挂的末端环"(单连接点、不与它环融合、去环后其余连通、取代基≤5 原子)会被处理。 */
 function _prpParseV2000(blk){ const L=blk.split('\n'); const c=L[3].trim().split(/\s+/).map(Number); const nA=c[0],nB=c[1]; return {nAtoms:nA,nBonds:nB,atomLines:L.slice(4,4+nA),bondLines:L.slice(4+nA,4+nA+nB)}; }
+/* 清掉 molblock 键块里"双键立体化学=either"的标记(第 4 列 = 3 或 4)。
+ * 关键修正(2026-11-05, C=N 被画成交叉): 主链路是
+ *   mol.get_new_coords()  ->  molblock  ->  RDKit.get_mol(blk).get_svg()
+ * get_new_coords() 写 molblock 时, 对**未指定 E/Z** 的双键会在键块第 4 列写 stereo=3(either);
+ * 再解析回来画图, RDKit 按 either 画成**交叉双键**(两条短线在中点交叉成 X)——
+ * 肟 C=N、腙 C=N、查尔酮 C=C、亚苄基 C=C 等全部中招(用户所见"这个 C=N 双键变成交叉了")。
+ * 清 0 后恢复平行双线; 2D 构象本身仍在坐标里, E/Z 由坐标重新推断, 视觉不变。
+ * 只动 **键类型=2(双键)且 stereo∈{3,4}** 的行 —— 单键楔形/虚楔(1/6)、三键、芳香键一律不碰,
+ * 故原子手性与楔形键显示不受影响。V2000 定宽: 原子1[0,3) 原子2[3,6) 类型[6,9) stereo[9,12)。 */
+function _prpClearBondStereo(blk){
+  const L=blk.split('\n');
+  const c=(L[3]||'').trim().split(/\s+/).map(Number);
+  const nA=c[0]|0, nB=c[1]|0;
+  if(!(nA>0 && nB>0)) return blk;
+  let n=0;
+  for(let i=4+nA; i<4+nA+nB && i<L.length; i++){
+    const s=L[i]; if(!s || s.length<12) continue;
+    if(parseInt(s.slice(6,9),10)!==2) continue;
+    const st=parseInt(s.slice(9,12),10);
+    if(st===3 || st===4){ L[i]=s.slice(0,9)+'  0'+s.slice(12); n++; }
+  }
+  if(n && globalThis.__PRP_DBG) console.log('[prp] double-bond either-stereo cleared:',n);
+  return L.join('\n');
+}
 function _prpBuildAdj(bl,n){ const a=Array.from({length:n},()=>[]); for(const b of bl){const m=b.match(/^\s*(\d+)\s+(\d+)\s+(\d+)/); if(!m)continue; const x=+m[1]-1,y=+m[2]-1; a[x].push(y); a[y].push(x);} return a; }
 function _prpFindRings(adj,n,t){ const rings=[]; for(let s=0;s<n;s++){ const path=[s],ip=new Set([s]); (function dfs(v){ if(path.length===t){ if(adj[v].includes(s)) rings.push([...path]); return;} for(const nb of adj[v]){ if(nb===s||ip.has(nb))continue; ip.add(nb); path.push(nb); dfs(nb); path.pop(); ip.delete(nb);} })(s);} const u=[],seen=new Set(); for(const r of rings){const k=[...r].sort((a,b)=>a-b).join(','); if(!seen.has(k)){seen.add(k);u.push(r);}} return u; }
 function _prpGetPaths(svg){ const re=/<path\b([^>]*)\/?>/g; const res=[]; let m; while((m=re.exec(svg))){ const tag=m[0]; const cls=(tag.match(/class='([^']*)'/)||[])[1]||''; const d=(tag.match(/d='([^']*)'/)||[])[1]||''; res.push({tag,cls,d}); } return res; }
@@ -584,6 +608,11 @@ function molToSVG(smiles){
       //   苯环恒为正六边形 120°(同一分子实测从 101/139 修复为全 120)。坐标由 coordgen 保证规整。
       let blk = null;
       try { blk = mol.get_new_coords(); } catch(e){ blk = null; }
+      // 关键修正(2026-11-05, C=N 交叉双键): RDKit 写 molblock 时会把"未指定 E/Z 的双键"
+      //   标成 stereo=3(either), 再解析回来画图就会画成**交叉双键**(两条线在中点交叉成 X)——
+      //   肟 C=N、腙 C=N、查尔酮 C=C 等库全部中招。清掉键的 stereo 字段即可恢复平行双线;
+      //   原子手性(楔形键)不在键块这一列, 不受影响。
+      if (blk) blk = _prpClearBondStereo(blk);
       let svg0 = null, molFromBlk = null;
       if (blk){ try { molFromBlk = RDKit.get_mol(blk); } catch(e){ molFromBlk = null; } }
       try { svg0 = (molFromBlk || mol).get_svg(250, 195); } catch(e){ svg0 = null; }
