@@ -70,12 +70,12 @@ async function initRDKit(){
  * 环检测: "真正悬挂的末端环"(单连接点、不与它环融合、去环后其余连通、取代基≤12 原子)会被处理;
  *   取代基里再含悬挂环(苄氧基/苯硫基苯基等联芳基)由"嵌套作业"处理: 元素归最内层、rotate 组嵌套复合。 */
 function _prpParseV2000(blk){ const L=blk.split('\n'); const c=L[3].trim().split(/\s+/).map(Number); const nA=c[0],nB=c[1]; return {nAtoms:nA,nBonds:nB,atomLines:L.slice(4,4+nA),bondLines:L.slice(4+nA,4+nA+nB)}; }
-/* 把被 depictor 压短的**端基键**拉回中位键长(只动度=1 的原子, 只沿原键方向)。
+/* 端基键长度修正(**双向**): 过短拉到中位, 过长压回中位(只动度=1 的原子, 只沿原键方向)。
  * 起因(2026-11-05 用户: "C=O 双键一个被画成特别长, 一个被画成那么短"):
- *   get_new_coords() 偶发把某个端基键压到 0.8 Å(中位 1.5), 画出来只有半截 —— 同一分子两个羰基一个长一个短。
- * 抽样 300 分子统计: 短键(<0.72×中位) 共 165 条, **165 条全是端基**, 非端基 0 条 ——
- *   所以只需处理端基, 且端基只连一个原子, 沿原方向推远**不会移动其它任何原子、不改变任何键角**。
- * 只放大不缩小(阈值 0.85×中位), 避免把 depictor 刻意推开的取代基拉回来造成重叠。 */
+ *   坐标生成器偶发把某个**端基键**压到 0.8 Å(中位 1.5) 或拉到 2.5 倍, 画出来就是半截/一长条。
+ * 抽样 300 分子统计: 短键(<0.72×中位) 165 条 **全是端基**; 过长键在 coordgen 坐标里 120 条则**全是非端基**
+ *   (那是布局问题, 靠"逐分子选坐标"解决, 见 _prpPickBlk), 端基过长只是零星, 这里一并处理。
+ * 端基只连一个原子, 沿原方向移动**不会移动其它任何原子、不改变任何键角**。 */
 function _prpLengthenTerminalBonds(blk){
   const L = blk.split('\n');
   const c = (L[3]||'').trim().split(/\s+/).map(Number);
@@ -89,21 +89,23 @@ function _prpLengthenTerminalBonds(blk){
     xy.push([x, y]);
   }
   const nb = Array.from({length: nA}, () => []);
+  const bIdx = new Int32Array(nA).fill(-1);   // 端基原子 -> 它那根键的序号(用于取键级)
   const ds = [];
   for (let i = 0; i < nB; i++){
     const s = L[4+nA+i] || '';
     const a = parseInt(s.slice(0,3), 10) - 1, b = parseInt(s.slice(3,6), 10) - 1;
     if (!(a >= 0 && a < nA && b >= 0 && b < nA) || a === b) continue;
     nb[a].push(b); nb[b].push(a);
+    bIdx[a] = i; bIdx[b] = i;
     ds.push(Math.hypot(xy[a][0]-xy[b][0], xy[a][1]-xy[b][1]));
   }
   if (ds.length < 2) return blk;
   ds.sort((p, q) => p - q);
   const med = ds[(ds.length/2)|0];
   if (!(med > 0.2)) return blk;
-  const MIN = 0.85 * med;
-  const CLR = 0.50 * med;                                // 允许的最近非键合间隙(半个键长, 约 13px, 不会视觉重叠)
-  const clearOf = (p, k) => {                            // 该点到其它原子的最近距离
+  const LO = 0.85 * med, HI = 1.25 * med;    // 正常区间; 越界才修正
+  const CLR = 0.50 * med;                    // 允许的最近非键合间隙
+  const clearOf = (p, k) => {
     let m = 1e9;
     for (let q = 0; q < nA; q++){
       if (q === k) continue;
@@ -118,25 +120,243 @@ function _prpLengthenTerminalBonds(blk){
     const j = nb[k][0];
     const dx = xy[k][0]-xy[j][0], dy = xy[k][1]-xy[j][1];
     const d = Math.hypot(dx, dy);
-    if (d < 1e-6 || d >= MIN) continue;
+    if (d < 1e-6 || (d >= LO && d <= HI)) continue;
     const cur = clearOf(xy[k], k);
     const f = med / d;
-    const cand = [xy[j][0] + dx * f, xy[j][1] + dy * f];
-    // 防重叠: 拉长后到其它原子的最近距离不得低于 min(原值, 0.50×中位键长); 否则只拉一半, 再不行就放弃。
-    let np = null;
-    if (clearOf(cand, k) >= Math.min(cur, CLR)) np = cand;
-    else {
-      const f2 = 1 + 0.5 * (f - 1);
-      const c2 = [xy[j][0] + dx * f2, xy[j][1] + dy * f2];
-      if (clearOf(c2, k) >= Math.min(cur, CLR)) np = c2;
+    const THR_HI = Math.min(cur, CLR);                       // 首选: 不比现在更挤, 且不低于半键长
+    const THR_LO = Math.max(0.45 * med, 0.85 * cur);         // 次选: 允许略挤, 但不得跌破 0.45 键长
+    /* 转向搜空位的三步:
+     *   ① 原方向延长; ② 绕母原子小角度偏转(偏角由小到大, 优先小偏角);
+     *   ③ 上面都不行就来全周细扫(3° 一格), 取最空的方向。
+     * 单键端基(C/F/Cl/Br 这类可自由旋转的)才允许大角度; 双键端基(=O 之类)只在 ±30° 内偏,
+     *   否则羰基会被摆到环的另一侧, 看着别扭(化学上没错, 但不像人画的)。 */
+    const isMulti = (parseInt((L[4+nA+bIdx[k]]||'').slice(6,9), 10) || 1) > 1;
+    const MAX_DEG = isMulti ? 30 : 180;
+    let np = null, bestLoose = null, bestClr = -1;
+    const tryAt = (pt) => {
+      const cl = clearOf(pt, k);
+      if (cl >= THR_HI) { np = pt; return true; }
+      if (cl >= THR_LO && cl > bestClr){ bestClr = cl; bestLoose = pt; }
+      return false;
+    };
+    {
+      const base = Math.atan2(dy, dx);
+      tryAt([xy[j][0] + dx * f, xy[j][1] + dy * f]);   // ① 原方向延长/压回
+      if (!np){
+        for (const deg of [6, 12, 18, 24, 30, 36, 45, 60]){
+          if (deg > MAX_DEG) break;
+          for (const sgn of [1, -1]){
+            if (tryAt([xy[j][0] + med*Math.cos(base+sgn*deg*Math.PI/180),
+                       xy[j][1] + med*Math.sin(base+sgn*deg*Math.PI/180)])) break;
+          }
+          if (np) break;
+        }
+      }
+      if (!np && MAX_DEG > 60){                       // ③ 全周细扫
+        for (let a = 0; a < 360; a += 3){
+          if (tryAt([xy[j][0] + med*Math.cos(a*Math.PI/180), xy[j][1] + med*Math.sin(a*Math.PI/180)])) break;
+        }
+      }
+      if (!np) np = bestLoose;
+      if (!np){                                       // 最后退到"只改一半"(距离上仍改善)
+        const f2 = 1 + 0.5 * (f - 1);
+        tryAt([xy[j][0] + dx * f2, xy[j][1] + dy * f2]);
+        if (!np) np = bestLoose;
+      }
     }
     if (!np) continue;
     xy[k][0] = np[0]; xy[k][1] = np[1];
     L[4+k] = xy[k][0].toFixed(4).padStart(10) + xy[k][1].toFixed(4).padStart(10) + (L[4+k]||'').slice(20);
     fixed++;
   }
-  if (fixed && globalThis.__PRP_DBG) console.log('[prp] terminal bonds lengthened:', fixed);
+  if (fixed && globalThis.__PRP_DBG) console.log('[prp] terminal bonds fixed:', fixed);
   return L.join('\n');
+}
+/* 给一份坐标打"画出来有多难看"的分(越低越好), 用于在多个坐标生成器之间逐分子取优。
+ * 分项:
+ *   ① 键长离群: 取 |d/中位 - 1| 的最大值, 过长的罚 ×1.5(半截键只是短一截, 过长键会顶到别的基团);
+ *   ② 环内角: 5/6/7 元环各顶点内角与理想值(108/120/128.57)之差的平均, 每度 2 分;
+ *   ③ 原子挤在一起: 非键合最近距离不足 0.5 键长的部分, 每 0.1 键长 20 分。
+ * 该分数只依赖几何, 与绘制样式无关。 */
+function _prpScoreBlk(blk){
+  if (!blk) return 1e9;
+  let P; try { P = _prpParseV2000(blk); } catch(e){ return 1e9; }
+  const nA = P.nAtoms;
+  if (!(nA > 1)) return 1e9;
+  const xy = [];
+  for (let i = 0; i < nA; i++){
+    const t = (P.atomLines[i]||'').trim().split(/\s+/);
+    const x = +t[0], y = +t[1];
+    if (!isFinite(x) || !isFinite(y)) return 1e9;
+    xy.push([x, y]);
+  }
+  const adj = _prpBuildAdj(P.bondLines, nA);
+  const ds = [];
+  for (const b of P.bondLines){
+    const m = b.match(/^\s*(\d+)\s+(\d+)/); if (!m) continue;
+    const a = +m[1]-1, c = +m[2]-1;
+    if (!(a >= 0 && a < nA && c >= 0 && c < nA)) continue;
+    ds.push(Math.hypot(xy[a][0]-xy[c][0], xy[a][1]-xy[c][1]));
+  }
+  if (ds.length < 2) return 1e9;
+  const sorted = ds.slice().sort((p, q) => p - q);
+  const med = sorted[(sorted.length/2)|0];
+  if (!(med > 0.2)) return 1e9;
+  let bondPen = 0;
+  for (const d of ds){
+    const r = d / med;
+    const dev = r < 1 ? (1 - r) : (r - 1) * 1.5;
+    if (dev > bondPen) bondPen = dev;
+  }
+  let angSum = 0, angN = 0;
+  for (const t of [5, 6, 7]){
+    let rings; try { rings = _prpFindRings(adj, nA, t); } catch(e){ rings = []; }
+    const ideal = t === 6 ? 120 : (t === 5 ? 108 : 128.571);
+    for (const r of rings){
+      for (let k = 0; k < t; k++){
+        const a = r[(k-1+t)%t], b = r[k], cc = r[(k+1)%t];
+        const v1x = xy[a][0]-xy[b][0], v1y = xy[a][1]-xy[b][1];
+        const v2x = xy[cc][0]-xy[b][0], v2y = xy[cc][1]-xy[b][1];
+        const n1 = Math.hypot(v1x, v1y), n2 = Math.hypot(v2x, v2y);
+        if (n1 < 1e-6 || n2 < 1e-6) continue;
+        let cs = (v1x*v2x + v1y*v2y) / (n1*n2);
+        cs = Math.max(-1, Math.min(1, cs));
+        angSum += Math.abs(Math.acos(cs) * 180 / Math.PI - ideal); angN++;
+      }
+    }
+  }
+  const angMean = angN ? angSum / angN : 0;
+  let minNB = 1e9;
+  if (nA <= 140){
+    const bonded = new Set();
+    adj.forEach((lst, i) => { for (const j of lst) bonded.add(i < j ? i+'-'+j : j+'-'+i); });
+    for (let i = 0; i < nA; i++) for (let j = i+1; j < nA; j++){
+      if (bonded.has(i+'-'+j)) continue;
+      const d = Math.hypot(xy[i][0]-xy[j][0], xy[i][1]-xy[j][1]);
+      if (d < minNB) minNB = d;
+    }
+  }
+  const overPen = (minNB < 1e9) ? Math.max(0, 0.5 - minNB/med) / 0.1 : 0;
+  return 100*bondPen + 2*angMean + 20*overPen;
+}
+/* 候选 C: 键长松弛 —— 把**非环键**的长度拉向中位值(两端各让一半), 环内键一律不动。
+ * 用途: 两种坐标生成器都会偶尔留下"非端基键偏长/偏短"(如 coordgen 把某根 C-C 拉到 2.5 倍),
+ *   而这种键没法靠移动端基修。松弛只改非环键长度, 不动环骨架, 因此不会把六边形搞歪;
+ *   是否真的变好由 _prpScoreBlk 裁决(重叠会被罚分, 所以松弛出重叠不会被选中)。 */
+function _prpRelaxBonds(blk){
+  let P; try { P = _prpParseV2000(blk); } catch(e){ return blk; }
+  const nA = P.nAtoms, L = blk.split('\n');
+  if (!(nA > 1)) return blk;
+  const xy = [];
+  for (let i = 0; i < nA; i++){
+    const t = (P.atomLines[i]||'').trim().split(/\s+/);
+    const x = +t[0], y = +t[1];
+    if (!isFinite(x) || !isFinite(y)) return blk;
+    xy.push([x, y]);
+  }
+  const adj = _prpBuildAdj(P.bondLines, nA);
+  const bonds = [];
+  for (const b of P.bondLines){
+    const m = b.match(/^\s*(\d+)\s+(\d+)/); if (!m) continue;
+    const a = +m[1]-1, c = +m[2]-1;
+    if (!(a >= 0 && a < nA && c >= 0 && c < nA) || a === c) continue;
+    bonds.push([a, c]);
+  }
+  if (bonds.length < 2) return blk;
+  /* 环内键判定: 去掉该键后两端是否仍连通(一次 BFS), 比枚举 3~8 元环快得多也稳得多。 */
+  const isRing = (a, c) => {
+    const seen = new Uint8Array(nA); seen[a] = 1;
+    const st = [a];
+    while (st.length){
+      const u = st.pop();
+      for (const v of adj[u]){
+        if ((u === a && v === c) || (u === c && v === a)) continue;
+        if (v === c) return true;
+        if (seen[v]) continue;
+        seen[v] = 1; st.push(v);
+      }
+    }
+    return false;
+  };
+  const free = bonds.filter(([a, c]) => !isRing(a, c));
+  if (!free.length) return blk;
+  /* 环上原子一律钉死: 松弛只许挪"不在环里"的原子。
+   *   起因(2026-11-05): 早先两端都对半挪, 会把环原子拖走 → 六边形被压歪、环内角罚分暴涨,
+   *   于是"键长更匀"的松弛结果反而被 _prpScoreBlk 判负(实测 49.95 输给 42.97)。钉死环后
+   *   松弛只在取代基内部动, 环保持正六边形, 才可能真的赢。 */
+  const inRing = new Uint8Array(nA);
+  for (const [a, c] of bonds) if (isRing(a, c)){ inRing[a] = 1; inRing[c] = 1; }
+  const adjustable = free.filter(([a, c]) => !inRing[a] || !inRing[c]);
+  if (!adjustable.length) return blk;
+  const len = (a,c) => Math.hypot(xy[a][0]-xy[c][0], xy[a][1]-xy[c][1]);
+  const ds = bonds.map(([a,c]) => len(a,c)).sort((p,q) => p-q);
+  const med = ds[(ds.length/2)|0];
+  if (!(med > 0.2)) return blk;
+  const orig = xy.map(p => [p[0], p[1]]);
+  for (let it = 0; it < 40; it++){
+    let moved = 0;
+    for (const [a,c] of adjustable){
+      const d = len(a,c);
+      if (d < 1e-6) continue;
+      const diff = d - med;
+      if (Math.abs(diff) < 0.01 * med) continue;
+      const ux = (xy[c][0]-xy[a][0]) / d, uy = (xy[c][1]-xy[a][1]) / d;
+      // 只有一端自由时由它独担全部位移; 两端都自由才各让一半。环上原子不动。
+      const fa = !inRing[a], fc = !inRing[c];
+      const wa = fa && fc ? 0.25 : (fa ? 0.5 : 0);
+      const wc = fa && fc ? 0.25 : (fc ? 0.5 : 0);
+      const sh = diff;
+      xy[a][0] += ux * sh * wa; xy[a][1] += uy * sh * wa;
+      xy[c][0] -= ux * sh * wc; xy[c][1] -= uy * sh * wc;
+      moved++;
+    }
+    if (!moved) break;
+  }
+  /* 防挤压收尾: 松弛只该让键长变匀, 不该把两个原子推到几乎重合。
+   *   实测该分子(三氯苯基+三甲氧基苯基)松弛把键长从 0.665 修到 0.99, 但把 9-18 两个原子
+   *   挤到 0.25 键长, 打分反而变差 → 被弃用。这里在"原坐标 → 松弛坐标"之间二分,
+   *   取"刚好不挤"的最大比例: 键长能修多少修多少, 绝不牺牲原子间距。 */
+  if (nA <= 140){
+    const bonded = new Set();
+    adj.forEach((lst, i) => { for (const j of lst) bonded.add(i < j ? i+'-'+j : j+'-'+i); });
+    const minNB = (pts) => {
+      let m = 1e9;
+      for (let i = 0; i < nA; i++) for (let j = i+1; j < nA; j++){
+        if (bonded.has(i+'-'+j)) continue;
+        const d = Math.hypot(pts[i][0]-pts[j][0], pts[i][1]-pts[j][1]);
+        if (d < m) m = d;
+      }
+      return m;
+    };
+    const FLOOR = 0.50 * med;   // 与端基修正的 CLR 同口径: 半个键长以内算"挤"
+    if (minNB(xy) < FLOOR){
+      if (minNB(orig) < FLOOR) return blk;      // 本来就在一起, 松弛解决不了, 别动
+      let lo = 0, hi = 1;
+      for (let k = 0; k < 10; k++){
+        const t = (lo + hi) / 2;
+        const pts = orig.map((p, i) => [p[0] + t*(xy[i][0]-p[0]), p[1] + t*(xy[i][1]-p[1])]);
+        if (minNB(pts) >= FLOOR) lo = t; else hi = t;
+      }
+      for (let i = 0; i < nA; i++){
+        xy[i][0] = orig[i][0] + lo*(xy[i][0]-orig[i][0]);
+        xy[i][1] = orig[i][1] + lo*(xy[i][1]-orig[i][1]);
+      }
+    }
+  }
+  for (let i = 0; i < nA; i++){
+    L[4+i] = xy[i][0].toFixed(4).padStart(10) + xy[i][1].toFixed(4).padStart(10) + (L[4+i]||'').slice(20);
+  }
+  return L.join('\n');
+}
+/* 在若干候选坐标里挑分最低的一份; 无候选则返回 null。 */
+function _prpPickBlk(list){
+  let best = null, bestS = 1e9;
+  for (const b of list){
+    if (!b) continue;
+    const s = _prpScoreBlk(b);
+    if (s < bestS){ bestS = s; best = b; }
+  }
+  return best;
 }
 /* 清掉 molblock 键块里"双键立体化学=either"的标记(第 4 列 = 3 或 4)。
  * 关键修正(2026-11-05, C=N 被画成交叉): 主链路是
@@ -711,8 +931,19 @@ function stripStrayDots(svg){
 }
 
 /* ---------- 结构式绘制 ---------- */
-function molToSVG(smiles){
+const _SVG_CACHE = new Map();
+/* W/H 默认 250×195(检索站卡片); 首页侧栏静态图要求 300×240, 由生成脚本传入。 */
+function molToSVG(smiles, _w, _h){
   if (!RDKit || !smiles) return null;
+  const W = _w || 250, H = _h || 195;
+  const ck = W + 'x' + H + '|' + smiles;
+  // 结果缓存: 现在一张图要试 A/E/C 三套坐标 + 三轮打分(约 30ms), 而同一个 SMILES 会被反复渲染
+  //   (翻页、改筛选、来回切换分类), 缓存后重复渲染零成本。上限 400 条, 满了清最早的。
+  const hit = _SVG_CACHE.get(ck);
+  if (hit !== undefined){
+    if (hit.blk) globalThis.__PRP_LASTBLK = hit.blk;   // 命中缓存也要把坐标还给审计钩子
+    return hit.svg;
+  }
   // 盐型 SMILES(含 '.') 优先用整体绘制; 若整体失败, 再按片段尝试, 但片段需按长度降序,
   // 优先绘制主分子而非反离子(如 [H+] / [Cl-]), 否则会只画出 H⁺ 等反离子。
   const parts = smiles.includes('.') ? smiles.split('.') : [smiles];
@@ -722,25 +953,33 @@ function molToSVG(smiles){
     try { mol = RDKit.get_mol(c); } catch(e){ mol = null; }
     if (!mol) continue;
     try {
-      // 关键修正(2026-11-05): 直接 mol.get_svg() 在大/拥挤分子上会用 RDKit 内部坐标, 把苯环画成非正六边形
-      //   (实测 41 原子分子内角 101~139°); 改用 coordgen 块坐标(get_new_coords)重建分子后再绘制,
-      //   苯环恒为正六边形 120°(同一分子实测从 101/139 修复为全 120)。坐标由 coordgen 保证规整。
-      let blk = null;
-      try { blk = mol.get_new_coords(); } catch(e){ blk = null; }
-      /* 关键修正(2026-11-05, "整体歪斜"): get_new_coords() 的块坐标**没有做规范取向**,
-       *   画出来整个分子是斜着摆的(用户: "这个本来可以画成不斜的")。
-       *   straighten_depiction() 只是把分子整体刚性旋转到规范取向 —— 实测逐键长**一个数都不变**
-       *   (0.797/1.5/1.5 前后完全一致), 环内角也不变, 故不会破坏上面的"正六边形"保证。 */
-      if (blk){
+      /* 坐标候选 A: RDKit 自带 depictor(get_new_coords) + 规范取向(straighten_depiction)。
+       *   straighten 只是整体刚性旋转 —— 实测逐键长**一个数都不变**(0.797/1.5/1.5 前后完全一致), 环内角不变。 */
+      let blkA = null;
+      try { blkA = mol.get_new_coords(); } catch(e){ blkA = null; }
+      if (blkA){
         try {
-          const mt = RDKit.get_mol(blk);
-          if (mt){ try { mt.straighten_depiction(); blk = mt.get_molblock() || blk; } finally { mt.delete(); } }
+          const mt = RDKit.get_mol(blkA);
+          if (mt){ try { mt.straighten_depiction(); blkA = mt.get_molblock() || blkA; } finally { mt.delete(); } }
         } catch(e){}
       }
-      /* 关键修正(2026-11-05, "一个 C=O 特别长一个特别短"): depictor 偶尔把**端基键**压到
-       *   0.8 Å(中位 1.5), 画出来就是半截。抽样 300 分子确认短键 165/165 **全是端基**(非端基 0),
-       *   故只需把端基沿原键方向拉回中位键长 —— 只动端基、只沿原方向, 其余原子与全部角度不受影响。 */
-      if (blk) blk = _prpLengthenTerminalBonds(blk);
+      /* 坐标候选 E: coordgen 坐标(set_new_coords(true))。两套坐标各有胜负 ——
+       *   RDKit depictor 偶发把端基键压成半截(如仲丁基吖啶二酮的双羰基一长一短);
+       *   coordgen 则偶发把**非端基** C-C 拉到 2.5 倍(4-[2-烷氧基苯基亚甲基氨基]苯甲酸一族)。
+       *   故两份都算、逐分子打分取优(_prpPickBlk), 不是固定用哪一个。 */
+      let blkE = null;
+      try { mol.set_new_coords(true); blkE = mol.get_molblock(); } catch(e){ blkE = null; }
+      if (blkA) blkA = _prpLengthenTerminalBonds(blkA);
+      if (blkE) blkE = _prpLengthenTerminalBonds(blkE);
+      let blk = _prpPickBlk([blkA, blkE]);
+      /* 候选 C: 在已选坐标上做"非环键键长松弛", 与 C 再比一次分 —— 专治非端基的过长/过短键。 */
+      if (blk){
+        let blkC = null;
+        try { blkC = _prpRelaxBonds(blk); } catch(e){ blkC = null; }
+        if (blkC) blk = _prpPickBlk([blk, blkC]);
+      }
+      // 调试/审计钩子: 让离线审计脚本能拿到"这一张图实际用的坐标"(浏览器控制台也可查)
+      if (blk) globalThis.__PRP_LASTBLK = blk;
       // 关键修正(2026-11-05, C=N 交叉双键): RDKit 写 molblock 时会把"未指定 E/Z 的双键"
       //   标成 stereo=3(either), 再解析回来画图就会画成**交叉双键**(两条线在中点交叉成 X)——
       //   肟 C=N、腙 C=N、查尔酮 C=C 等库全部中招。清掉键的 stereo 字段即可恢复平行双线;
@@ -748,13 +987,15 @@ function molToSVG(smiles){
       if (blk) blk = _prpClearBondStereo(blk);
       let svg0 = null, molFromBlk = null;
       if (blk){ try { molFromBlk = RDKit.get_mol(blk); } catch(e){ molFromBlk = null; } }
-      try { svg0 = (molFromBlk || mol).get_svg(250, 195); } catch(e){ svg0 = null; }
-      if (svg0 == null) svg0 = mol.get_svg(250, 195);
+      try { svg0 = (molFromBlk || mol).get_svg(W, H); } catch(e){ svg0 = null; }
+      if (svg0 == null) svg0 = mol.get_svg(W, H);
       let svg = svg0;
       if (blk){ try { svg = postRotatePendantRings(svg0, blk); } catch(e){} }
       svg = stripStrayDots(svg);
       if (molFromBlk){ try{ molFromBlk.delete(); }catch(e){} }
       mol.delete();
+      if (_SVG_CACHE.size >= 400) _SVG_CACHE.delete(_SVG_CACHE.keys().next().value);
+      _SVG_CACHE.set(ck, {svg, blk});
       return svg;
     } catch(e){ if (mol) mol.delete(); }
   }
