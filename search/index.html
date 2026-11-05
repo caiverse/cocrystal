@@ -89,8 +89,10 @@
 </div>
 
 <script src="lib/rdkit/RDKit_minimal.js"></script>
-<script src="app.js?v=pjs-20261105d"></script>
-<script src="structsearch.js"></script>
+<!-- 每次加载强制拉取最新 app.js / structsearch.js(绕过 GitHub Pages 的 600s 缓存, 无需 CDN);
+     时间戳每毫秒唯一 -> 浏览器与 CDN 永远 cache miss -> 改完即时生效, 不必再手升 ?v= 或硬刷新 -->
+<script>document.write('<script src="app.js?t='+Date.now()+'"><\/script>');</script>
+<script>document.write('<script src="structsearch.js?t='+Date.now()+'"><\/script>');</script>
 <script>
 // 产物库统计：运行时读取 data/stats.json + data/products.manifest.json，改库后自动更新
 // 总数以 manifest.count(分片清单, 聚合/去重都会更新)为准；库构成取 stats.json
