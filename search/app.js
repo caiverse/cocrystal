@@ -67,7 +67,8 @@ async function initRDKit(){
  *   RDKit 给 N/O 标签留位会把键线截短, 截短端点反推的锚点位置内缩 15~22px, 使方向偏差约 20°,
  *   曾把本已外向的环额外旋转 20° 造成 142°/98° 歪斜("与N相连的苯环两个角度不是120°");
  *   键线截短沿键轴故方向精确, 配合精确环原子位置即得 120°/120°。旋转时小黑点三角随质心归属一并转。
- * 环检测: 仅"真正悬挂的末端环"(单连接点、不与它环融合、去环后其余连通、取代基≤5 原子)会被处理。 */
+ * 环检测: "真正悬挂的末端环"(单连接点、不与它环融合、去环后其余连通、取代基≤12 原子)会被处理;
+ *   取代基里再含悬挂环(苄氧基/苯硫基苯基等联芳基)由"嵌套作业"处理: 元素归最内层、rotate 组嵌套复合。 */
 function _prpParseV2000(blk){ const L=blk.split('\n'); const c=L[3].trim().split(/\s+/).map(Number); const nA=c[0],nB=c[1]; return {nAtoms:nA,nBonds:nB,atomLines:L.slice(4,4+nA),bondLines:L.slice(4+nA,4+nA+nB)}; }
 /* 把被 depictor 压短的**端基键**拉回中位键长(只动度=1 的原子, 只沿原键方向)。
  * 起因(2026-11-05 用户: "C=O 双键一个被画成特别长, 一个被画成那么短"):
@@ -367,7 +368,12 @@ function postRotatePendantRings(svg, blk){
   const atomRings=Array.from({length:P.nAtoms},()=>[]);
   rings.forEach((r,i)=>{ for(const a of r) atomRings[a].push(i); });
   const sharesAtom=(ri)=>{ for(const a of rings[ri]) if(atomRings[a].length>1) return true; return false; };
-  const SUBST_MAX=5;
+  // ★ 2026-11-05(嵌套悬挂环): 取代基上限 5 -> 12 —— "2-苄氧基/2-苯硫基苯基"等联芳基醚类的取代基
+  //   片段含 7~8 个原子(比 5 大), 之前被叶环判定直接排除, 连工序都不进, 环歪 5~15° 无人处理
+  //   (实测残留 4 环全部如此)。放宽到 12 后, 取代基里若还含另一悬挂环(如苄氧基的外苯环),
+  //   由下方"嵌套作业"机制保证内外两环都正确处理: 元素归最内层作业, rotate 组嵌套复合。
+  //   两端都是大片段的"桥连环"仍会被排除(次大分量远超 12)。
+  const SUBST_MAX=12;
   const isLeaf=(ringAtoms)=>{ const rem=new Array(P.nAtoms).fill(true); for(const a of ringAtoms) rem[a]=false;
     const rest=[]; for(let i=0;i<P.nAtoms;i++) if(rem[i]) rest.push(i); if(!rest.length) return false;
     const visited=new Set(); const comps=[];
@@ -410,7 +416,12 @@ function postRotatePendantRings(svg, blk){
   //    两侧夹角精确 = 90°+180°/n(苯环 120°/120°)。已达标(误差<2°)的环不动, 留给下方刚体旋转。──
   const dd=(x)=>{ let d=((x)%360+540)%360-180; return d; };
   const area2=(pts)=>{ let A=0; for(let k=0;k<pts.length;k++){ const p=pts[k], q2=pts[(k+1)%pts.length]; A+=p[0]*q2[1]-q2[0]*p[1]; } return A; };
-  const delta=new Array(P.nAtoms).fill(null);
+  // ★ 嵌套作业(2026-11-05): 悬挂环的取代基本身可含另一悬挂环(2-苄氧基/苯硫基苯基等)。
+  //   环内重投影位移(ringD, 作用于环顶点/相似变换)与外层作业对取代基的刚体携带位移(carryD)分开记账,
+  //   totalD=两者之和 —— 内外作业谁先处理都不影响每原子总位移; d 改写单遍施加 totalD。
+  const ringD=new Array(P.nAtoms).fill(null);
+  const carryD=new Array(P.nAtoms).fill(null);
+  const totalD=(a)=>{ const r=ringD[a], c=carryD[a]; if(r&&c) return [r[0]+c[0], r[1]+c[1]]; return r||c; };
   const doneJobs=[];
   for(const j of jobs){
     const n=j.cyc.length;
@@ -423,8 +434,12 @@ function postRotatePendantRings(svg, blk){
     const o1=j.cyc[1], o2=j.cyc[n-1];
     let tA=_prpBondDir(paths0, ip, anchor, ipP);
     if(tA==null){ const anP=getPos(anchor); if(!anP) continue; tA=Math.atan2(anP[1]-ipP[1], anP[0]-ipP[0]); }
-    const b1=Math.atan2(pos[o1][1]-ipP[1], pos[o1][0]-ipP[0]);
-    const b2=Math.atan2(pos[o2][1]-ipP[1], pos[o2][0]-ipP[0]);
+    // ★ 2026-11-05: 环键方向优先取"画线键轴"(截短沿键轴故方向精确, 免疫杂原子标签字形偏差),
+    //   这才是用户看到的图形; 取不到(无该键路径)才退回预测位置向量。
+    const _dirOf=(nb, fb)=>{ const t=_prpBondDir(paths0, ip, nb, ipP); if(t!=null) return t;
+      return Math.atan2(fb[1]-ipP[1], fb[0]-ipP[0]); };
+    const b1=_dirOf(o1, pos[o1]);
+    const b2=_dirOf(o2, pos[o2]);
     const a1=Math.abs(dd((b1-tA)*180/Math.PI)), a2=Math.abs(dd((b2-tA)*180/Math.PI));
     const target=90+180/n;                       // 正 n 边形悬挂环: 系链两侧夹角
     if(Math.abs(a1-target)<2 && Math.abs(a2-target)<2) continue;   // 已达标, 不动
@@ -443,14 +458,16 @@ function postRotatePendantRings(svg, blk){
     if(area2(oldPts)*area2(V)<0){
       j.cyc=[j.cyc[0]].concat(j.cyc.slice(1).reverse());
     }
-    // 逐原子平移增量 Δ(环原子=新顶点-旧位置)
-    const dl={}; for(let k=0;k<n;k++){ const a=j.cyc[k]; dl[a]=[V[k][0]-pos[a][0], V[k][1]-pos[a][1]]; }
-    let maxd=0; for(const a of j.cyc) maxd=Math.max(maxd, Math.hypot(dl[a][0],dl[a][1]));
+    // 逐原子环内重投影增量 ringD(环原子=新顶点-旧位置; 不与外层携带位移混账)
+    for(let k=0;k<n;k++){ const a=j.cyc[k]; ringD[a]=[V[k][0]-pos[a][0], V[k][1]-pos[a][1]]; }
+    let maxd=0; for(const a of j.cyc) maxd=Math.max(maxd, Math.hypot(ringD[a][0],ringD[a][1]));
     if(maxd>2.2*s) continue;                     // 增量异常: 放弃重投影(留待旋转兜底)
-    // 悬挂取代基随挂靠环原子整体平移(BFS 自环原子向片断传播)
+    // 悬挂取代基随挂靠环原子整体平移(BFS 自环原子向片断传播):
+    //   子原子刚体位移 = 挂靠原子总位移(ringD+carryD); 若取代基内还有被内层作业重投影过的原子,
+    //   totalD 在施加时自动叠加, 顺序无关。
     { const seen=new Set(j.cyc); const q2=[...j.cyc];
       while(q2.length){ const x=q2.shift(); for(const nb of adj[x]){
-        if(j.frag.has(nb)&&!seen.has(nb)){ seen.add(nb); dl[nb]=dl[x].slice(); q2.push(nb); } } } }
+        if(j.frag.has(nb)&&!seen.has(nb)){ seen.add(nb); const t=totalD(x); carryD[nb]= t? t.slice() : [0,0]; q2.push(nb); } } } }
     // 碰撞核验: 新顶点不得贴近母核原子
     let clash=false;
     outer: for(let k=0;k<n;k++){
@@ -461,7 +478,6 @@ function postRotatePendantRings(svg, blk){
       }
     }
     if(clash) continue;
-    for(const a of j.frag){ if(dl[a]) delta[a]=dl[a]; }
     j.done=true; j.th=null; j.posX=pos;           // 已处理: 下方刚体旋转跳过
     doneJobs.push(j);
   }
@@ -499,27 +515,31 @@ function postRotatePendantRings(svg, blk){
         const nums0=pts.map(t=>t.split(',').map(Number));
         let cxm=0,cym=0; for(const q2 of nums0){ cxm+=q2[0]; cym+=q2[1]; } cxm/=nums0.length; cym/=nums0.length;
         let bestA=null, bestD=8;
-        for(let a=0;a<P.nAtoms;a++){ if(!delta[a]) continue; const p=getPos(a); if(!p) continue;
+        for(let a=0;a<P.nAtoms;a++){ if(!totalD(a)) continue; const p=getPos(a); if(!p) continue;
           const dd2=Math.hypot(p[0]-cxm,p[1]-cym); if(dd2<bestD){ bestD=dd2; bestA=a; } }
         if(bestA===null) return tag;
-        xf=(p)=>[p[0]+delta[bestA][0], p[1]+delta[bestA][1]];
-      } else if(uniq.length>2 || !uniq.some(a=>delta[a])){
+        const t0=totalD(bestA);
+        xf=(p)=>[p[0]+t0[0], p[1]+t0[1]];
+      } else if(uniq.length>2 || !uniq.some(a=>totalD(a))){
         return tag;                               // 不在任何重投影片断内
-      } else if(uniq.length===2 && delta[uniq[0]] && delta[uniq[1]]){
-        // 两原子均带 Δ: 同属某 done 环的环内键 -> 相似变换; 否则(环->取代基/取代基内部键, Δ相同)平移
+      } else if(uniq.length===2 && totalD(uniq[0]) && totalD(uniq[1])){
+        // 两原子均带 Δ: 同属某 done 环的环内键 -> 相似变换(目标端点=旧端点+总位移, 外层携带已含其中);
+        // 否则(环->取代基/取代基内部键, Δ相同)平移
         let jj=null;
         for(const j2 of doneJobs){ if(j2.ringAtoms.has(uniq[0]) && j2.ringAtoms.has(uniq[1])){ jj=j2; break; } }
         if(jj){
           const oa=jj.posX[uniq[0]], ob=jj.posX[uniq[1]];
-          if(oa&&ob){
-            xf=_sim(oa, ob, [oa[0]+delta[uniq[0]][0], oa[1]+delta[uniq[0]][1]],
-                         [ob[0]+delta[uniq[1]][0], ob[1]+delta[uniq[1]][1]]);
+          const ta=totalD(uniq[0]), tb=totalD(uniq[1]);
+          if(oa&&ob&&ta&&tb){
+            xf=_sim(oa, ob, [oa[0]+ta[0], oa[1]+ta[1]],
+                         [ob[0]+tb[0], ob[1]+tb[1]]);
           }
         }
-        if(!xf){ const a0=uniq[0]; xf=(p)=>[p[0]+delta[a0][0], p[1]+delta[a0][1]]; }
+        if(!xf){ const a0=uniq[0]; const t1=totalD(a0); xf=(p)=>[p[0]+t1[0], p[1]+t1[1]]; }
       } else {
-        const a0=uniq.find(x=>delta[x]);
-        xf=(p)=>[p[0]+delta[a0][0], p[1]+delta[a0][1]];
+        const a0=uniq.find(x=>totalD(x));
+        const t2=totalD(a0);
+        xf=(p)=>[p[0]+t2[0], p[1]+t2[1]];
       }
       if(!xf) return tag;
       const nd=_rwD(d, xf);
@@ -538,7 +558,10 @@ function postRotatePendantRings(svg, blk){
     if(j.done) continue;                          // 已在上方重投影处理
     const {ip, anchor}=j.tether;
     const ipP=AP[ip] || getPos(ip); if(!ipP){ j.th=null; continue; }
-    j.ipPos=ipP;                                              // 旋转轴心(精确)
+    // ★ 嵌套作业(2026-11-05): 若本环的 ipso 被外层 done 作业的取代基刚体携带位移(carryD)挪过,
+    //   旋转轴心必须用挪动后的位置(元素坐标已在 d 改写时加了同一位移, 轴心不加就错位)。
+    const dpc=totalD(ip);
+    j.ipPos= dpc? [ipP[0]+dpc[0], ipP[1]+dpc[1]] : ipP;      // 旋转轴心(精确, 含外层携带)
     // 放射方向(指向环外) = ipso 处两条环键方向的"角平分线"的反向。
     // ★ 2026-11-05: 原来用"环心->ipso", 环心取环原子平均; 环上若有杂原子(N/O/S), 其标签字形中心
     //   有 2~4px 系统偏差, 把环心带偏约 1.6px → 旋转角偏 3.4°, 实测 tether=(123.4,116.5) 而不是 120/120。
@@ -573,11 +596,21 @@ function postRotatePendantRings(svg, blk){
   const reT=/<text\b[^>]*>[\s\S]*?<\/text>/g; while((m=reT.exec(svg))){ elems.push({start:m.index, end:m.index+m[0].length, full:m[0], cls:(m[0].match(/class='([^']*)'/)||[])[1]||'', owner:-1}); }
   for(let ei=0; ei<elems.length; ei++){
     const at=_prpAtomsInClass(elems[ei].cls);
+    // ★ 嵌套作业(2026-11-05): 元素归属"最内层"的旋转作业(frag 最小者), 外层作业的 rotate 组再嵌套包住内层组,
+    //   两个旋转绕各自的 ipso(原始坐标)复合 = 先修内环取向、再整体随外环转, 数学上严格正确。
+    //   "自己的环"图元(两原子同属某作业的 ringAtoms)优先, 防止环绕核的怪异 frag 包含把环错交给别的作业。
+    //   done(重投影)作业不认领 —— 其元素已在 d 改写中原位更新, 但若被外层旋转作业的 frag 包含,
+    //   会由外层认领、随外层组一起旋转(保持其重投影后的形状)。
+    let bestRing=-1, bestFrag=-1;
     for(let ji=0; ji<jobs.length; ji++){ const j=jobs[ji]; if(j.th===null) continue;
       let inf=0; for(const a of at){ if(j.frag.has(a)) inf++; }
-      if(at.size===2 && inf===2){ elems[ei].owner=ji; break; }   // 片断内部键
-      if(at.size===1 && inf===1){ elems[ei].owner=ji; break; }   // 片断原子标签
+      if(!((at.size===2&&inf===2)||(at.size===1&&inf===1))) continue;
+      const arr=[...at];
+      const ringOwn = (at.size===2) ? (j.ringAtoms.has(arr[0])&&j.ringAtoms.has(arr[1])) : j.ringAtoms.has(arr[0]);
+      if(ringOwn){ if(bestRing<0 || j.frag.size<jobs[bestRing].frag.size) bestRing=ji; }
+      else { if(bestFrag<0 || j.frag.size<jobs[bestFrag].frag.size) bestFrag=ji; }
     }
+    elems[ei].owner = bestRing>=0 ? bestRing : bestFrag;
   }
   // 携带 RDKit 在无 class 碳原子上画的"小黑点"三角(填充:none、黑色描边、仅 3 点):
   // 这类图元不带 atom- class, 上面按 class 的归属逻辑会漏掉它们; 若不随片断一起旋转,
@@ -592,23 +625,41 @@ function postRotatePendantRings(svg, blk){
     if(pts.length!==3) continue;
     const nums=pts.map(s=>s.split(',').map(Number));
     const cxm=(nums[0][0]+nums[1][0]+nums[2][0])/3, cym=(nums[0][1]+nums[1][1]+nums[2][1])/3;
+    let bestJi=-1;                                     // 小黑点也归最内层(与上面归属口径一致)
     for(let ji=0; ji<jobs.length; ji++){ const j=jobs[ji]; if(j.th===null) continue;
       let hit=false;
       for(const a of j.frag){ const p=getPos(a); if(p && Math.hypot(p[0]-cxm, p[1]-cym) < 7){ hit=true; break; } }
-      if(hit){ e.owner=ji; break; }
+      if(hit && (bestJi<0 || j.frag.size<jobs[bestJi].frag.size)) bestJi=ji;
     }
+    if(bestJi>=0) e.owner=bestJi;
   }
   // 删除片断图元(按 start 降序, 保持索引有效), 再按 job 包进 <g transform="rotate(...)">
   const removeSet=elems.filter(e=>e.owner>=0);
   removeSet.sort((a,b)=>b.start-a.start);
   for(const e of removeSet){ svg = svg.slice(0,e.start) + svg.slice(e.end); }
   const groups=[];
-  for(let ji=0; ji<jobs.length; ji++){ const j=jobs[ji]; if(j.th===null) continue;
-    const ipP=j.ipPos || getPos(j.tether.ip); if(!ipP) continue;
-    const deg=j.th*180/Math.PI;
-    const inner=removeSet.filter(e=>e.owner===ji).map(e=>e.full).join('');
-    if(!inner) continue;
-    groups.push('<g transform="rotate('+deg.toFixed(3)+', '+ipP[0].toFixed(2)+', '+ipP[1].toFixed(2)+')">'+inner+'</g>');
+  { // ★ 嵌套作业(2026-11-05): 若作业 B 的 frag ⊂ 作业 A 的 frag(如苄氧基外苯环 ⊂ 内苯环作业),
+    //   B 的 rotate 组嵌套进 A 的组内 —— 两个旋转都绕原始坐标轴心, 复合 = 先内后外, 严格正确。
+    const rotIdx=[]; for(let ji=0; ji<jobs.length; ji++){ if(jobs[ji].th!==null) rotIdx.push(ji); }
+    const fragSubset=(big,small)=>{ if(big.size<=small.size) return false; for(const a of small){ if(!big.has(a)) return false; } return true; };
+    const kids=new Map();
+    for(const a of rotIdx) for(const b of rotIdx){
+      if(a!==b && fragSubset(jobs[a].frag, jobs[b].frag)){ if(!kids.has(a)) kids.set(a,[]); kids.get(a).push(b); } }
+    const isKid=new Set(); for(const v of kids.values()) for(const b of v) isKid.add(b);
+    const built=new Map();
+    const buildGroup=(ji)=>{
+      if(built.has(ji)) return built.get(ji);
+      built.set(ji, null);                            // 防环
+      const j=jobs[ji];
+      const ipP=j.ipPos || getPos(j.tether.ip); if(!ipP) return null;
+      const deg=j.th*180/Math.PI;
+      let inner=removeSet.filter(e=>e.owner===ji).map(e=>e.full).join('');
+      for(const b of (kids.get(ji)||[])){ const g=buildGroup(b); if(g) inner+=g; }
+      if(!inner) return null;
+      const g='<g transform="rotate('+deg.toFixed(3)+', '+ipP[0].toFixed(2)+', '+ipP[1].toFixed(2)+')">'+inner+'</g>';
+      built.set(ji, g); return g;
+    };
+    for(const ji of rotIdx){ if(isKid.has(ji)) continue; const g=buildGroup(ji); if(g) groups.push(g); }
   }
   if(groups.length){
     const ci=svg.lastIndexOf('</svg>');
