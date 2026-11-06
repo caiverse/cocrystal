@@ -1,6 +1,6 @@
 {
-  "total": 1143600,
-  "with_smiles": 1143600,
+  "total": 1175600,
+  "with_smiles": 1175600,
   "without_smiles": 0,
   "smiles_invalid_dropped": 0,
   "coverage_pct": 100.0,
@@ -97,7 +97,11 @@
     "酰肼",
     "苯并噻唑-2-胺",
     "DPPH醛肟酯",
-    "氨基脲席夫碱"
+    "氨基脲席夫碱",
+    "DPPO-席夫碱(亚胺)",
+    "DPPO-腙",
+    "DPPO-酰腙",
+    "DPPO-缩氨脲"
   ],
   "by_category": {
     "席夫碱": 75047,
@@ -193,7 +197,11 @@
     "DOPO-酰腙": 11000,
     "DOPO-缩氨脲": 11000,
     "DOPO-腙": 11000,
-    "氨基脲席夫碱": 572
+    "氨基脲席夫碱": 572,
+    "DPPO-席夫碱(亚胺)": 8000,
+    "DPPO-酰腙": 8000,
+    "DPPO-腙": 8000,
+    "DPPO-缩氨脲": 8000
   },
   "by_library": {
     "席夫碱产物库_胺醛对应产物表_2026-10-29.csv": 75047,
@@ -294,8 +302,12 @@
     "products_DOPO_acylhydrazone.csv": 11000,
     "products_DOPO_hydrazone.csv": 11000,
     "products_DOPO_semicarbazone.csv": 11000,
-    "氨基脲席夫碱_产物表.csv": 572
+    "氨基脲席夫碱_产物表.csv": 572,
+    "products_DPPO_Schiff_imine.csv": 8000,
+    "products_DPPO_acylhydrazone.csv": 8000,
+    "products_DPPO_hydrazone.csv": 8000,
+    "products_DPPO_semicarbazone.csv": 8000
   },
-  "n_product": 94,
+  "n_product": 98,
   "n_reagent": 4
 }

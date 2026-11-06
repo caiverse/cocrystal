@@ -12,7 +12,9 @@ let src = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8').replace(/'use stric
 src += '\n;globalThis.__setRDKit=(m)=>{RDKit=m;};';
 (0, eval)(src);
 
-const arr = JSON.parse(fs.readFileSync(path.join(ROOT, 'data/products.35.json'), 'utf8'));
+const SHARD = process.argv[2] || 'products.35.json';
+const TAG = SHARD.replace(/[^0-9]/g, '') || 'new';
+const arr = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', SHARD), 'utf8'));
 const N = 400, pick = [];
 for (let i = 0; i < N; i++) pick.push(arr[Math.floor(i * (arr.length - 1) / (N - 1))]);
 // 额外加入 4 个含孤立 C=C 的已知"either"样例
@@ -21,6 +23,9 @@ const known = ['CCCC=CCC(NNCCCC)P1(=O)Oc2ccccc2-c2ccccc21',
                'CCCC=CCC(NNC(=O)NC(C)C)P1(=O)Oc2ccccc2-c2ccccc21',
                'CCC=CCCC(NNC(=O)Nc1ccccc1C)P1(=O)Oc2ccccc2-c2ccccc21'];
 known.forEach((s, i) => pick.push({ code: 'KNOWN' + (i + 1), s }));
+// 再从当前分片等距挑 4 个代表结构，落盘供转 PNG 目检
+[0, Math.floor(arr.length / 4), Math.floor(arr.length / 2), arr.length - 1]
+  .forEach((k, i) => pick.push({ code: 'SAMPLE' + (i + 1), s: arr[k].s }));
 
 function eitherCount(blk) {
   if (!blk) return -1;
@@ -54,8 +59,8 @@ init({ locateFile: f => path.join(ROOT, 'lib/rdkit', f) }).then(mod => {
     if (raw > 0) rawEither++;
     if (aft > 0) { afterEither++; bad.push(['EITHER_AFTER_CLEAR', r.code, r.s]); }
     // 把含孤立 C=C 的样例 SVG 落盘, 供转 PNG 目检
-    if (r.code && r.code.startsWith('KNOWN') && dumped < 4) {
-      fs.writeFileSync(path.join(TMP, '_new_' + r.code + '.svg'), svg);
+    if (r.code && (r.code.startsWith('KNOWN') || r.code.startsWith('SAMPLE')) && dumped < 8) {
+      fs.writeFileSync(path.join(TMP, '_' + TAG + '_' + r.code + '.svg'), svg);
       dumped++;
     }
     ok++;
