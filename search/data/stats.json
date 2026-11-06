@@ -1,6 +1,6 @@
 {
-  "total": 1187582,
-  "with_smiles": 1187582,
+  "total": 1188183,
+  "with_smiles": 1188183,
   "without_smiles": 0,
   "smiles_invalid_dropped": 0,
   "coverage_pct": 100.0,
@@ -102,7 +102,8 @@
     "DPPO-腙",
     "DPPO-酰腙",
     "DPPO-缩氨脲",
-    "DPCP-芳胺磷酰胺酯"
+    "DPCP-芳胺磷酰胺酯",
+    "DOPO-醛加合物"
   ],
   "by_category": {
     "席夫碱": 75047,
@@ -203,7 +204,8 @@
     "DPPO-酰腙": 8000,
     "DPPO-腙": 8000,
     "DPPO-缩氨脲": 8000,
-    "DPCP-芳胺磷酰胺酯": 11982
+    "DPCP-芳胺磷酰胺酯": 11982,
+    "DOPO-醛加合物": 601
   },
   "by_library": {
     "席夫碱产物库_胺醛对应产物表_2026-10-29.csv": 75047,
@@ -309,8 +311,9 @@
     "products_DPPO_acylhydrazone.csv": 8000,
     "products_DPPO_hydrazone.csv": 8000,
     "products_DPPO_semicarbazone.csv": 8000,
-    "products_DPCP_phosphoramidate_cleaned.csv": 11982
+    "products_DPCP_phosphoramidate_cleaned.csv": 11982,
+    "DOPO-醛加合物_产物表.csv": 601
   },
-  "n_product": 99,
+  "n_product": 100,
   "n_reagent": 4
 }
