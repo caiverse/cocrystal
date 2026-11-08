@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>长沙共晶科技有限公司 · 品牌素材规范</title>
+<style>
+:root{--ink:#12293A;--teal:#158C87;--line:#DFEAEC;--bg:#F6FAFA;--mute:#6B8592}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:15px/1.7 'Microsoft YaHei','PingFang SC','Noto Sans SC',sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:56px 40px 80px}
+header{border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:38px}
+h1{margin:0 0 6px;font-size:30px;letter-spacing:1px}
+header p{margin:0;color:var(--mute);font-size:14px;letter-spacing:.5px}
+h2{font-size:17px;letter-spacing:1px;margin:44px 0 14px;padding-left:11px;
+  border-left:4px solid var(--teal);line-height:1.2}
+.grid{display:grid;gap:20px}
+.g2{grid-template-columns:1fr 1fr}
+.g3{grid-template-columns:repeat(3,1fr)}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:26px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:170px}
+.card.dark{background:var(--ink);border-color:var(--ink)}
+.card img{max-width:100%;display:block}
+.cap{margin-top:16px;font-size:12.5px;color:var(--mute);letter-spacing:.4px;text-align:center}
+.card.dark .cap{color:#9FBAC6}
+.cap b{color:var(--ink);font-weight:600}
+.card.dark .cap b{color:#fff}
+.row{display:flex;align-items:flex-end;gap:26px;flex-wrap:wrap;justify-content:center}
+.sizebox{text-align:center}
+.sizebox span{display:block;margin-top:8px;font-size:11.5px;color:var(--mute)}
+.ruler{border:1px solid var(--line);border-radius:6px;padding:10px;background:#fff}
+.tile{width:112px;height:112px;border-radius:26px;background:#fff;border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center}
+.mock{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+.mock .bar{display:flex;align-items:center;gap:9px;padding:9px 14px;border-bottom:1px solid var(--line)}
+.mock .bar img{height:26px}
+.mock .bar .t{font-size:13px;font-weight:700;letter-spacing:.5px}
+.mock .bar .sp{flex:1}
+.mock .bar .n{font-size:12px;color:var(--mute);margin-left:14px}
+.mock .body{padding:16px;color:var(--mute);font-size:12.5px}
+.mock .hero{background:linear-gradient(100deg,#2F6FB4,#12A79E);color:#fff;padding:22px;
+  text-align:center;font-size:15px;letter-spacing:1px}
+.rules{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.rule{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px 18px;font-size:13.4px}
+.rule b{color:var(--teal)}
+.rule.no b{color:#C0564A}
+footer{margin-top:52px;padding-top:20px;border-top:1px solid var(--line);
+  color:var(--mute);font-size:12.5px;letter-spacing:.4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>长沙共晶科技有限公司 · 品牌素材</h1>
+  <p>COCRYSTAL TECHNOLOGY · BRAND ASSETS　|　图形：尖顶六边形 ＋ 14 分面 ＋ 左青右蓝竖分</p>
+</header>
+
+<h2>主标（横版，双语）</h2>
+<div class="grid g2">
+  <div class="card"><img src="logo.svg" style="width:100%"><div class="cap"><b>logo.svg</b>　1200×400　默认用途</div></div>
+  <div class="card dark"><img src="logo-white.svg" style="width:100%"><div class="cap"><b>logo-white.svg</b>　深色背景专用</div></div>
+</div>
+
+<h2>横版变体</h2>
+<div class="grid g2">
+  <div class="card"><img src="logo-nav.svg" style="width:78%"><div class="cap"><b>logo-nav.svg</b>　单行，导航栏 ≤40px 高时用</div></div>
+  <div class="card"><img src="logo-compact.svg" style="width:92%"><div class="cap"><b>logo-compact.svg</b>　紧凑双语，页脚/名片</div></div>
+</div>
+
+<h2>竖版（居中堆叠）</h2>
+<div class="grid g2">
+  <div class="card"><img src="logo-stack.svg" style="height:250px"><div class="cap"><b>logo-stack.svg</b>　530×580　展板 / 封面 / 易拉宝</div></div>
+  <div class="card">
+    <h3 style="font-size:14px;margin:0 0 14px;letter-spacing:.5px">仅图形与单色</h3>
+    <div class="row">
+      <div class="sizebox"><img src="mark.svg" style="height:104px"><span>mark.svg</span></div>
+      <div class="sizebox"><img src="mark-mono.svg" style="height:104px"><span>mark-mono.svg</span></div>
+    </div>
+    <div class="cap" style="margin-top:18px">单色版为真镂空，可压任意底色</div>
+  </div>
+</div>
+
+<h2>单色版（镂空，任意底色）</h2>
+<div class="grid g2">
+  <div class="card"><img src="mark-mono.svg" style="height:150px"><div class="cap"><b>mark-mono.svg</b>　深色底</div></div>
+  <div class="card dark"><img src="mark-mono-inverse.svg" style="height:150px"><div class="cap"><b>mark-mono-inverse.svg</b>　浅色底</div></div>
+</div>
+
+<h2>图标</h2>
+<div class="grid g2">
+  <div class="card">
+    <div class="row">
+      <div class="tile"><img src="icon.svg" style="height:72px"></div>
+      <div class="sizebox"><img src="favicon.svg" style="width:48px;height:48px"><span>48px</span></div>
+      <div class="sizebox"><img src="favicon.svg" style="width:32px;height:32px"><span>32px</span></div>
+      <div class="sizebox"><img src="favicon.svg" style="width:16px;height:16px"><span>16px</span></div>
+    </div>
+    <div class="cap"><b>icon.svg / favicon.svg</b>　图标四周留 8.5% 安全边</div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <div class="sizebox"><img src="icon-512.png" style="width:88px"><span>512</span></div>
+      <div class="sizebox"><img src="icon-256.png" style="width:64px"><span>256</span></div>
+      <div class="sizebox"><img src="apple-touch-icon.png" style="width:52px;border-radius:11px"><span>180 iOS</span></div>
+      <div class="sizebox"><img src="favicon-32.png" style="width:32px"><span>32</span></div>
+      <div class="sizebox"><img src="favicon-16.png" style="width:16px"><span>16</span></div>
+    </div>
+    <div class="cap"><b>icon-512 / 256 / apple-touch-icon / favicon-32 / 16</b>（PNG，透明）</div>
+  </div>
+</div>
+
+<h2>应用示例</h2>
+<div class="grid g2">
+  <div class="mock">
+    <div class="bar"><img src="logo-nav.svg"><span class="sp"></span>
+      <span class="n">产品展示</span><span class="n">关于我们</span><span class="n">产品与业务</span></div>
+    <div class="hero">长沙共晶科技有限公司</div>
+    <div class="body">顶部导航使用单行版；横幅下方沿用站点主色。</div>
+  </div>
+  <div class="mock">
+    <div class="bar"><img src="favicon.svg" style="height:18px"><span class="t">长沙共晶科技 · cocrystal.cn</span></div>
+    <div class="body" style="padding:22px 16px;display:flex;align-items:center;gap:18px">
+      <div class="tile" style="width:76px;height:76px;border-radius:18px"><img src="icon.svg" style="height:50px"></div>
+      <div>浏览器标签页 / 手机主屏 / 社交分享缩略图，均使用同一套图形，缩到 16px 仍可辨。</div>
+    </div>
+  </div>
+</div>
+
+<h2>社交分享图</h2>
+<div class="card" style="padding:0;overflow:hidden"><img src="og-image.png" style="width:100%">
+  <div class="cap" style="padding:14px 0 0"><b>og-image.png</b>　1200×630</div></div>
+
+<h2>使用规范</h2>
+<div class="rules">
+  <div class="rule"><b>最小尺寸</b>　横版主标 ≥ 140px 宽；单行版 ≥ 100px 宽；仅图形 ≥ 16px。低于此尺寸线条会糊。</div>
+  <div class="rule"><b>安全边距</b>　四周留白不小于图形高度的 1/4，任何文字、边框不得进入该区域。</div>
+  <div class="rule"><b>色彩</b>　主色 <code>#12293A</code>，辅助 <code>#158C87</code>，图形渐变取自青（#5FA79E→#2F5C57）与蓝（#84ABDE→#33567B）。</div>
+  <div class="rule"><b>底色</b>　浅底用彩色版，深底用反白版；单色印刷用 mark-mono，镂空部分即底色。</div>
+  <div class="rule no"><b>禁止</b>　拉伸变形、单独改某一面颜色、给图形加投影或描边、把图形与文字距离拉大。</div>
+  <div class="rule no"><b>禁止</b>　在花哨照片上直接放彩色版（改用反白版或加纯色底板）。</div>
+</div>
+
+<footer>长沙共晶科技有限公司 · cocrystal.cn　|　图形为矢量，任意放大不失真；所有版本出自同一套几何，比例与分面完全一致。</footer>
+</div>
+</body>
+</html>
