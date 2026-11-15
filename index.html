@@ -16,6 +16,7 @@
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
+<script defer src="https://events.vercount.one/js"></script>
 <style>
   :root{
     --bg:#f5f7fa; --card:#ffffff; --text:#1f2329; --muted:#5b6472;
@@ -77,6 +78,10 @@
   .contact a:hover{border-color:var(--accent);color:var(--accent)}
   footer{text-align:center;color:var(--muted);font-size:.85rem;padding:10px 20px}
   footer .flogo{display:block;margin:0 auto 6px;width:min(280px,68%);height:auto}
+  .visitstats{margin:8px auto 4px;display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;font-size:.82rem}
+  .visitstats b{color:var(--accent);font-weight:600;font-variant-numeric:tabular-nums}
+  .visitstats .vs-sep{opacity:.4}
+  .visitstats .vs-note{font-size:.74rem;opacity:.75}
   .searchframe{width:100%;height:82vh;min-height:520px;border:1px solid var(--border);border-radius:14px;background:#fff}
   @media(max-width:640px){
     .hero{padding:18px 16px}.hero h1{font-size:1.9rem}.container{padding:32px 16px}
@@ -219,7 +224,13 @@
     <p style="margin-top:16px">欢迎通过邮箱或电话与我们联系，洽谈合作与技术交流。</p>
   </section>
 </main>
-<footer><img class="flogo" src="logo-compact-sm.svg?v=2" alt="长沙共晶科技有限公司" width="430" height="120">© <span id="year"></span> 长沙共晶科技有限公司 · Powered by cocrystal.cn　·　<a href="brand/" style="color:inherit;text-decoration:none;border-bottom:1px solid #cfdfe2">品牌素材</a></footer>
+<footer><img class="flogo" src="logo-compact-sm.svg?v=2" alt="长沙共晶科技有限公司" width="430" height="120">© <span id="year"></span> 长沙共晶科技有限公司 · Powered by cocrystal.cn　·　<a href="brand/" style="color:inherit;text-decoration:none;border-bottom:1px solid #cfdfe2">品牌素材</a>
+<div class="visitstats" id="visitStats">
+  <span>总访问量 <b id="vercount_value_site_pv">—</b> 次</span>
+  <span class="vs-sep">·</span>
+  <span>总访客数 <b id="vercount_value_site_uv">—</b> 人</span>
+  <span class="vs-note">每 60 秒自动更新 · 自 2026-11 起累计 · 统计由 Vercount 提供（Cookie 去重）</span>
+</div></footer>
 <script>
   document.getElementById('year').textContent=new Date().getFullYear();
   // 移动端汉堡菜单
@@ -317,6 +328,38 @@
       ]).then(function(a){put(a[0],a[1]);}).catch(function(){next(i+1);});
     })(0);
   })();
+</script>
+<script>
+/* 访问量统计：官方 vercount 脚本只在页面加载时 POST 计数一次并填值；
+   此后每 60 秒只走 GET 只读接口刷新显示，绝不 POST（避免自己给自己刷量）。
+   GET /api/v2/log 已实测幂等、支持 CORS，编码后的 url 与未编码归属同一 host。 */
+(function(){
+  var pvEl=document.getElementById('vercount_value_site_pv'),
+      uvEl=document.getElementById('vercount_value_site_uv');
+  if(!pvEl||!uvEl) return;
+  var api=new URL('https://events.vercount.one/api/v2/log');
+  api.searchParams.set('url',location.href);
+  function paint(d){
+    if(!d) return;
+    var pv=Number(d.site_pv),uv=Number(d.site_uv);
+    if(isFinite(pv)&&pv>=0) pvEl.textContent=pv.toLocaleString('zh-CN');
+    if(isFinite(uv)&&uv>=0) uvEl.textContent=uv.toLocaleString('zh-CN');
+  }
+  function refresh(){
+    if(document.visibilityState==='hidden') return;
+    var ctl=new AbortController(),to=setTimeout(function(){ctl.abort();},5000);
+    fetch(api.toString(),{method:'GET',cache:'no-store',signal:ctl.signal})
+      .then(function(r){if(!r.ok) throw new Error('HTTP '+r.status);return r.json();})
+      .then(function(j){paint(j&&j.data?j.data:j);})
+      .catch(function(){/* 网络失败时保留上一次数字：不写 0、不弹错 */})
+      .finally(function(){clearTimeout(to);});
+  }
+  refresh();
+  setInterval(refresh,60000);
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState==='visible') refresh();
+  });
+})();
 </script>
 <script src="rails.js"></script>
 </body>
