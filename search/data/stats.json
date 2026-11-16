@@ -1,6 +1,6 @@
 {
-  "total": 1265930,
-  "with_smiles": 1265930,
+  "total": 1267132,
+  "with_smiles": 1267132,
   "without_smiles": 0,
   "smiles_invalid_dropped": 0,
   "coverage_pct": 100.0,
@@ -109,7 +109,9 @@
     "DOPO-缩氨脲水解产物",
     "DOPO-腙水解产物",
     "PYC-芳醛吡喃并香豆素",
-    "PYR-4H吡喃-氧杂Hantzsch"
+    "PYR-4H吡喃-氧杂Hantzsch",
+    "MLD-米氏酸-3,4-二氢吡啶酮",
+    "MLD-米氏酸-3,4-二氢吡喃-2-酮"
   ],
   "by_category": {
     "席夫碱": 75047,
@@ -217,7 +219,9 @@
     "DOPO-缩氨脲水解产物": 11000,
     "DOPO-腙水解产物": 11000,
     "PYC-芳醛吡喃并香豆素": 588,
-    "PYR-4H吡喃-氧杂Hantzsch": 33164
+    "PYR-4H吡喃-氧杂Hantzsch": 33164,
+    "MLD-米氏酸-3,4-二氢吡啶酮": 600,
+    "MLD-米氏酸-3,4-二氢吡喃-2-酮": 602
   },
   "by_library": {
     "席夫碱产物库_胺醛对应产物表_2026-10-29.csv": 75047,
@@ -330,8 +334,9 @@
     "products_DOPO_semicarbazone_hydrolysis.csv": 11000,
     "products_DOPO_hydrazone_hydrolysis.csv": 11000,
     "products_pyranocoumarin_cleaned.csv": 588,
-    "products_4hpyran_cleaned.csv": 33164
+    "products_4hpyran_cleaned.csv": 33164,
+    "products_meldrum_cleaned.csv": 1202
   },
-  "n_product": 106,
+  "n_product": 108,
   "n_reagent": 4
 }
