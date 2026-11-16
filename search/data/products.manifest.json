@@ -1,5 +1,5 @@
 {
-  "count": 1232766,
+  "count": 1265930,
   "shards": [
     "products.0.json",
     "products.1.json",
@@ -44,7 +44,8 @@
     "products.40.json",
     "products.41.json",
     "products.42.json",
-    "products.43.json"
+    "products.43.json",
+    "products.44.json"
   ],
   "bytes": [
     35258892,
@@ -90,7 +91,8 @@
     7971649,
     8367621,
     7735936,
-    446885
+    446885,
+    17418409
   ],
   "has_code": true,
   "code_field": "code"
