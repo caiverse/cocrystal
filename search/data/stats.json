@@ -1,6 +1,6 @@
 {
-  "total": 1232178,
-  "with_smiles": 1232178,
+  "total": 1232766,
+  "with_smiles": 1232766,
   "without_smiles": 0,
   "smiles_invalid_dropped": 0,
   "coverage_pct": 100.0,
@@ -107,7 +107,8 @@
     "DOPO-席夫碱(亚胺)水解产物",
     "DOPO-酰腙水解产物",
     "DOPO-缩氨脲水解产物",
-    "DOPO-腙水解产物"
+    "DOPO-腙水解产物",
+    "PYC-芳醛吡喃并香豆素"
   ],
   "by_category": {
     "席夫碱": 75047,
@@ -213,7 +214,8 @@
     "DOPO-席夫碱(亚胺)水解产物": 11000,
     "DOPO-酰腙水解产物": 11000,
     "DOPO-缩氨脲水解产物": 11000,
-    "DOPO-腙水解产物": 11000
+    "DOPO-腙水解产物": 11000,
+    "PYC-芳醛吡喃并香豆素": 588
   },
   "by_library": {
     "席夫碱产物库_胺醛对应产物表_2026-10-29.csv": 75047,
@@ -324,8 +326,9 @@
     "products_DOPO_Schiff_imine_hydrolysis.csv": 11000,
     "products_DOPO_acylhydrazone_hydrolysis.csv": 11000,
     "products_DOPO_semicarbazone_hydrolysis.csv": 11000,
-    "products_DOPO_hydrazone_hydrolysis.csv": 11000
+    "products_DOPO_hydrazone_hydrolysis.csv": 11000,
+    "products_pyranocoumarin_cleaned.csv": 588
   },
-  "n_product": 104,
+  "n_product": 105,
   "n_reagent": 4
 }
