@@ -1,7 +1,7 @@
 {
   "radius": 2,
   "fpSize": 2048,
-  "numRecords": 1585862,
+  "numRecords": 1744992,
   "rdkit": "2026.09.1",
   "format": "chunked: per-file uint32 n + per-record(uint16 count, count*uint16 bits)",
   "chunks": [
@@ -24,7 +24,9 @@
     "fp.16.bin",
     "fp.17.bin",
     "fp.18.bin",
-    "fp.19.bin"
+    "fp.19.bin",
+    "fp.20.bin",
+    "fp.21.bin"
   ],
   "counts": [
     920660,
@@ -46,6 +48,8 @@
     79645,
     79695,
     79696,
-    79694
+    79694,
+    79565,
+    79565
   ]
 }
