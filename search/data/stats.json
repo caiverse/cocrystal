@@ -1,6 +1,6 @@
 {
-  "total": 1757078,
-  "with_smiles": 1757078,
+  "total": 1757068,
+  "with_smiles": 1757068,
   "without_smiles": 0,
   "smiles_invalid_dropped": 0,
   "coverage_pct": 100.0,
@@ -293,7 +293,7 @@
     "氨基脲腙-亚磷酸二苯酯加成产物": 572,
     "游离α-氨基膦酸(三酯水解归一)": 79565,
     "游离α-氨基次膦酸(次膦酸乙酯水解)": 79565,
-    "Ph2POCl-芳胺次膦酰胺": 11982,
+    "Ph2POCl-芳胺次膦酰胺": 11972,
     "Ph2POCl-芳香二胺双次膦酰胺": 52,
     "DPCP-芳香二胺双磷酰胺酸酯": 52
   },
@@ -410,7 +410,7 @@
     "products_pyranocoumarin_cleaned.csv": 588,
     "products_4hpyran_cleaned.csv": 33164,
     "products_meldrum_cleaned.csv": 1202,
-    "products_P2POCL_arylamine_phosphinamide.csv": 11982,
+    "products_P2POCL_arylamine_phosphinamide.csv": 11972,
     "products_P2POCL_diamine_bisphosphinamide.csv": 52,
     "products_DPCP_diamine_bisphosphoramidate.csv": 52
   },
