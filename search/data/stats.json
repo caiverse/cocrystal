@@ -1,6 +1,6 @@
 {
-  "total": 1993441,
-  "with_smiles": 1993441,
+  "total": 2156854,
+  "with_smiles": 2156854,
   "without_smiles": 0,
   "smiles_invalid_dropped": 0,
   "coverage_pct": 100.0,
@@ -150,7 +150,9 @@
     "Ph2POCl-芳香二胺双次膦酰胺",
     "DPCP-芳香二胺双磷酰胺酸酯",
     "PYRA-5-氨基吡唑吡唑并二氢吡啶",
-    "PYRB-香豆素稠合吡唑并吡啶"
+    "PYRB-香豆素稠合吡唑并吡啶",
+    "IMDA-5-氨基咪唑咪唑并二氢吡啶",
+    "IMDB-香豆素稠合咪唑并吡啶"
   ],
   "by_category": {
     "席夫碱": 75047,
@@ -298,8 +300,10 @@
     "Ph2POCl-芳胺次膦酰胺": 11972,
     "Ph2POCl-芳香二胺双次膦酰胺": 52,
     "DPCP-芳香二胺双磷酰胺酸酯": 52,
-    "PYRA-5-氨基吡唑吡唑并二氢吡啶": 232154,
-    "PYRB-香豆素稠合吡唑并吡啶": 4219
+    "PYRA-5-氨基吡唑吡唑并二氢吡啶": 211049,
+    "PYRB-香豆素稠合吡唑并吡啶": 4219,
+    "IMDA-5-氨基咪唑咪唑并二氢吡啶": 180900,
+    "IMDB-香豆素稠合咪唑并吡啶": 3618
   },
   "by_library": {
     "席夫碱产物库_胺醛对应产物表_2026-10-29.csv": 75047,
@@ -417,8 +421,9 @@
     "products_P2POCL_arylamine_phosphinamide.csv": 11972,
     "products_P2POCL_diamine_bisphosphinamide.csv": 52,
     "products_DPCP_diamine_bisphosphoramidate.csv": 52,
-    "products_cleaned.csv": 236373
+    "products_cleaned.csv": 215268,
+    "imidazodhp_products_cleaned.csv": 184518
   },
-  "n_product": 147,
+  "n_product": 149,
   "n_reagent": 4
 }
