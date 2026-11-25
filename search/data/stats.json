@@ -1,6 +1,6 @@
 {
-  "total": 2279263,
-  "with_smiles": 2279263,
+  "total": 2399840,
+  "with_smiles": 2399840,
   "without_smiles": 0,
   "smiles_invalid_dropped": 0,
   "coverage_pct": 100.0,
@@ -155,7 +155,11 @@
     "IMDB-香豆素稠合咪唑并吡啶",
     "TRZA-5-氨基-1,2,3-三氮唑三氮唑并二氢吡啶",
     "TRZB-香豆素稠合三氮唑并吡啶",
-    "THI-3-氨基噻吩噻吩并二氢吡啶"
+    "THI-3-氨基噻吩噻吩并二氢吡啶",
+    "TZP-2-氨基噻唑噻唑并嘧啶",
+    "TDZ-2-氨基噻二唑噻二唑并嘧啶",
+    "TRZ-3-氨基三氮唑三氮唑并嘧啶",
+    "BZT-2-氨基苯并噻唑嘧啶并苯并噻唑"
   ],
   "by_category": {
     "席夫碱": 75047,
@@ -309,7 +313,11 @@
     "IMDB-香豆素稠合咪唑并吡啶": 3618,
     "TRZA-5-氨基-1,2,3-三氮唑三氮唑并二氢吡啶": 90450,
     "TRZB-香豆素稠合三氮唑并吡啶": 1809,
-    "THI-3-氨基噻吩噻吩并二氢吡啶": 30150
+    "THI-3-氨基噻吩噻吩并二氢吡啶": 30150,
+    "TZP-2-氨基噻唑噻唑并嘧啶": 30150,
+    "TDZ-2-氨基噻二唑噻二唑并嘧啶": 30150,
+    "TRZ-3-氨基三氮唑三氮唑并嘧啶": 30145,
+    "BZT-2-氨基苯并噻唑嘧啶并苯并噻唑": 30132
   },
   "by_library": {
     "席夫碱产物库_胺醛对应产物表_2026-10-29.csv": 75047,
@@ -430,8 +438,12 @@
     "products_cleaned.csv": 215268,
     "imidazodhp_products_cleaned.csv": 184518,
     "triazolodhp_products_cleaned.csv": 92259,
-    "thienodhp_products_cleaned.csv": 30150
+    "thienodhp_products_cleaned.csv": 30150,
+    "thiazolopyrimidine_products_cleaned.csv": 30150,
+    "thiadiazolopyrimidine_products_cleaned.csv": 30150,
+    "triazolopyrimidine_products_cleaned.csv": 30145,
+    "pyrimidobenzothiazole_products_cleaned.csv": 30132
   },
-  "n_product": 152,
+  "n_product": 156,
   "n_reagent": 4
 }
