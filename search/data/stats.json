@@ -1,6 +1,6 @@
 {
-  "total": 2249113,
-  "with_smiles": 2249113,
+  "total": 2279263,
+  "with_smiles": 2279263,
   "without_smiles": 0,
   "smiles_invalid_dropped": 0,
   "coverage_pct": 100.0,
@@ -154,7 +154,8 @@
     "IMDA-5-氨基咪唑咪唑并二氢吡啶",
     "IMDB-香豆素稠合咪唑并吡啶",
     "TRZA-5-氨基-1,2,3-三氮唑三氮唑并二氢吡啶",
-    "TRZB-香豆素稠合三氮唑并吡啶"
+    "TRZB-香豆素稠合三氮唑并吡啶",
+    "THI-3-氨基噻吩噻吩并二氢吡啶"
   ],
   "by_category": {
     "席夫碱": 75047,
@@ -307,7 +308,8 @@
     "IMDA-5-氨基咪唑咪唑并二氢吡啶": 180900,
     "IMDB-香豆素稠合咪唑并吡啶": 3618,
     "TRZA-5-氨基-1,2,3-三氮唑三氮唑并二氢吡啶": 90450,
-    "TRZB-香豆素稠合三氮唑并吡啶": 1809
+    "TRZB-香豆素稠合三氮唑并吡啶": 1809,
+    "THI-3-氨基噻吩噻吩并二氢吡啶": 30150
   },
   "by_library": {
     "席夫碱产物库_胺醛对应产物表_2026-10-29.csv": 75047,
@@ -427,8 +429,9 @@
     "products_DPCP_diamine_bisphosphoramidate.csv": 52,
     "products_cleaned.csv": 215268,
     "imidazodhp_products_cleaned.csv": 184518,
-    "triazolodhp_products_cleaned.csv": 92259
+    "triazolodhp_products_cleaned.csv": 92259,
+    "thienodhp_products_cleaned.csv": 30150
   },
-  "n_product": 151,
+  "n_product": 152,
   "n_reagent": 4
 }
