@@ -182,12 +182,42 @@ function _prpLengthenTerminalBonds(blk){
   if (fixed && globalThis.__PRP_DBG) console.log('[prp] terminal bonds fixed:', fixed);
   return L.join('\n');
 }
+/* 键-键交叉检测(供 _prpScoreBlk 收"画出来有交叉"这种硬伤)。
+ * 起因(2026-11-26 用户报 CC-mcTVIWZHk): 2-异丙基苯基的异丙基一个甲基键**直接穿过**苯并噻唑苯环,
+ *   图上是个明显的"X", 而旧打分只看键长/环内角/原子最近距离 —— 交叉那两条键的端点离得都够远,
+ *   于是被判为"合格坐标"。coordgen 那套恰好不交叉, 但键长略欠(22.1 分 vs 0.02), 逐分子取优时输了。
+ * 口径: 两条**不共端点**的键, 线段真相交才算(collinear 共线重叠不算, 那是芳香内线那类装饰)。 */
+function _prpBondsOf(bl, n){
+  const out = [];
+  for (const b of bl){
+    const m = (b||'').match(/^\s*(\d+)\s+(\d+)/);
+    if (!m) continue;
+    const a = +m[1]-1, c = +m[2]-1;
+    if (a >= 0 && a < n && c >= 0 && c < n && a !== c) out.push([a, c]);
+  }
+  return out;
+}
+function _prpSegX(p1, p2, p3, p4){
+  const d = (a, b, c) => (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0]);
+  const d1 = d(p3,p4,p1), d2 = d(p3,p4,p2), d3 = d(p1,p2,p3), d4 = d(p1,p2,p4);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+function _prpCrossCount(xy, bonds){
+  let c = 0;
+  for (let i = 0; i < bonds.length; i++) for (let j = i+1; j < bonds.length; j++){
+    const [a, b] = bonds[i], [e, f] = bonds[j];
+    if (a === e || a === f || b === e || b === f) continue;
+    if (_prpSegX(xy[a], xy[b], xy[e], xy[f])) c++;
+  }
+  return c;
+}
 /* 给一份坐标打"画出来有多难看"的分(越低越好), 用于在多个坐标生成器之间逐分子取优。
  * 分项:
  *   ① 键长离群: 取 |d/中位 - 1| 的最大值, 过长的罚 ×1.5(半截键只是短一截, 过长键会顶到别的基团);
  *   ② 环内角: 5/6/7 元环各顶点内角与理想值(108/120/128.57)之差的平均, 每度 2 分;
- *   ③ 原子挤在一起: 非键合最近距离不足 0.5 键长的部分, 每 0.1 键长 20 分。
- * 该分数只依赖几何, 与绘制样式无关。 */
+ *   ③ 原子挤在一起: 非键合最近距离不足 0.5 键长的部分, 每 0.1 键长 20 分;
+ *   ④ 键线交叉: 每条 80 分(2026-11-26 加)。权重定在"压过键长小偏差(通常 <25 分)、
+ *      但压不过真正的原子重叠(③ 可到 100+)" —— 交叉是最刺眼的硬伤, 不能输给几分键长不匀。 */
 function _prpScoreBlk(blk){
   if (!blk) return 1e9;
   let P; try { P = _prpParseV2000(blk); } catch(e){ return 1e9; }
@@ -247,7 +277,12 @@ function _prpScoreBlk(blk){
     }
   }
   const overPen = (minNB < 1e9) ? Math.max(0, 0.5 - minNB/med) / 0.1 : 0;
-  return 100*bondPen + 2*angMean + 20*overPen;
+  let crossPen = 0;
+  if (nA <= 110){
+    const bl = _prpBondsOf(P.bondLines, nA);
+    if (bl.length > 2) crossPen = 80 * _prpCrossCount(xy, bl);
+  }
+  return 100*bondPen + 2*angMean + 20*overPen + crossPen;
 }
 /* 候选 C: 键长松弛 —— 把**非环键**的长度拉向中位值(两端各让一半), 环内键一律不动。
  * 用途: 两种坐标生成器都会偶尔留下"非端基键偏长/偏短"(如 coordgen 把某根 C-C 拉到 2.5 倍),
