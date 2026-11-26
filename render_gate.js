@@ -13,12 +13,13 @@
  *   node render_gate.js --calibrate --shards 79 80        # 只打印各指标分位, 用于定阈值
  *   node render_gate.js --appjs <path> ...                # 指定别的 app.js(回归对照用)
  *
- * 判据(阈值见 THRESH, 由新库抽样 p99 定, 2026-11-26 标定):
+ * 判据(阈值见 THRESH; 2026-11-26 起改为零容忍, 用户要求"全部挨个更正"):
  *   ① 键线交叉 = 0            两条不共端点的键线段真相交
- *   ② 键长比 0.70–1.65        逐键 d/中位
+ *   ② 键长比 0.70–2.60        逐键 d/中位; 1.65~2.60 记 WARN(拥挤分子外推取舍), >2.60 FAIL
  *   ③ 非键最近距离 ≥ 0.40×中位 原子叠在一起
  *   ④ 环内角平均偏差 ≤ 8°      5/6/7 元环相对 108/120/128.57
  *   ⑤ SVG 必须非空且含键路径
+ *   → 任一片抽样里出现 1 条不合格或交叉即 FAIL, 列出 code 逐条修; 不再按缺陷率放行。
  */
 'use strict';
 const fs = require('fs'), path = require('path');
@@ -35,11 +36,8 @@ const THRESH = {
   bondWarn: 1.65,    // 1.65~2.60 记 WARN: 拥挤分子"推远片断"必然拉长系链键, 属可接受的取舍
   minNB: 0.40,       // × 中位键长
   ringAngMean: 8.0,  // 度
-  /* 比例闸门: 十几万条里总有个别分子两套坐标都救不回来, 零容忍会永远拦住上传。
-   * 口径改成"缺陷率"——交叉是最刺眼的一类, 单独卡到 0.1%; 综合不合格率卡 0.3%。
-   * 抽样下 1/1200 = 0.08%, 所以这两个阈值等价于"每片最多容忍 1~3 条"。 */
-  crossRate: 0.001,
-  failRate: 0.003,
+  /* ★ 零容忍(2026-11-26 用户要求"全部挨个更正"): 不合格数、交叉数都必须精确为 0,
+   *   不再用比例阈值放行。WARN(长键 1.65~2.6, 拥挤分子外推的合法取舍)仍不计入不合格。 */
 };
 
 function parseBlk(blk){
@@ -254,13 +252,11 @@ init({ locateFile: f => path.join(SEARCH, 'lib/rdkit', f) }).then(mod => {
     + ' 非键最近≥' + THRESH.minNB + ' 环角≤' + THRESH.ringAngMean + '°'
     + ' 长键 WARN>' + THRESH.bondWarn + ' FAIL>' + THRESH.bondMax);
   const crossAll = rows.reduce((a, r) => a + r.cross, 0);
-  const crossRate = totN ? crossAll / totN : 0;
-  const failRate = totN ? totR / totN : 1;
-  const rateOK = totN > 0 && crossRate <= THRESH.crossRate && failRate <= THRESH.failRate;
-  console.log('缺陷率: 交叉 ' + (100*crossRate).toFixed(3) + '% (限 ' + (100*THRESH.crossRate).toFixed(2) + '%)'
-    + ' | 综合不合格 ' + (100*failRate).toFixed(3) + '% (限 ' + (100*THRESH.failRate).toFixed(2) + '%)');
-  const pass = rateOK;
-  if (pass && totR) console.log('注: 有 ' + totR + ' 条个别缺陷未消除, 已在上方列出, 属可接受范围(请人工确认)');
-  console.log(pass ? '\nRENDER GATE PASS' : '\nRENDER GATE FAIL —— 不许上传，先修行/换布局或剔除该批产物');
+  /* ★ 2026-11-26 用户明确要求「全部挨个更正，打分不过关不要上传」→ 零容忍:
+   *   不合格数必须精确为 0, 交叉必须精确为 0。旧的比例闸门(≤0.1%/≤0.3%)已废除 ——
+   *   它会放行"每片 1~3 条带缺陷", 与用户要求冲突。抽样命中一条即 FAIL, 会列出 code 逐条修。 */
+  const pass = totN > 0 && totR === 0 && crossAll === 0;
+  console.log('零容忍: 不合格必须=0 (实 ' + totR + ') | 交叉必须=0 (实 ' + crossAll + ')');
+  console.log(pass ? '\nRENDER GATE PASS' : '\nRENDER GATE FAIL —— 有 ' + totR + ' 条不合格/交叉, 不许上传, 先按 code 逐条修或剔除');
   process.exit(pass ? 0 : 1);
 }).catch(e => { console.error('FATAL:', e && e.message); process.exit(2); });

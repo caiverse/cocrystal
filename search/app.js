@@ -1019,6 +1019,41 @@ function _prpMinNB(xy, bonds, nA){
   }
   return m;
 }
+/* 一份 molblock 里最短键 / 最长键相对中位键长的比值。用于短键兜底。 */
+function _prpBondRatios(blk){
+  let P; try { P = _prpParseV2000(blk); } catch(e){ return { min: 9, max: 9 }; }
+  const nA = P.nAtoms, xy = _prpXYOf(P);
+  if (!xy) return { min: 9, max: 9 };
+  const b = _prpBondsOf(P.bondLines, nA);
+  const ds = b.map(([a,c]) => Math.hypot(xy[a][0]-xy[c][0], xy[a][1]-xy[c][1]));
+  if (ds.length < 2) return { min: 9, max: 9 };
+  const med = ds.slice().sort((p,q)=>p-q)[(ds.length/2)|0];
+  if (!(med > 0.2)) return { min: 9, max: 9 };
+  return { min: Math.min(...ds)/med, max: Math.max(...ds)/med };
+}
+function _prpMinBondRatio(blk){ return _prpBondRatios(blk).min; }
+function _prpHasShortBond(blk, floor){ return _prpBondRatios(blk).min < floor; }
+/* 环内角平均偏差(与 render_gate.js 同口径), 用于"环角兜底"换坐标。 */
+function _prpRingAngOf(blk){
+  let P; try { P = _prpParseV2000(blk); } catch(e){ return 0; }
+  const nA = P.nAtoms, xy = _prpXYOf(P);
+  if (!xy) return 0;
+  const adj = _prpBuildAdj(P.bondLines, nA);
+  let sum = 0, cnt = 0;
+  for (const t of [5, 6, 7]){
+    const ideal = t === 6 ? 120 : (t === 5 ? 108 : 128.571);
+    let rings; try { rings = _prpFindRings(adj, nA, t); } catch(e){ rings = []; }
+    for (const r of rings) for (let k = 0; k < t; k++){
+      const a = r[(k-1+t)%t], b = r[k], c = r[(k+1)%t];
+      const v1 = [xy[a][0]-xy[b][0], xy[a][1]-xy[b][1]], v2 = [xy[c][0]-xy[b][0], xy[c][1]-xy[b][1]];
+      const n1 = Math.hypot(v1[0],v1[1]), n2 = Math.hypot(v2[0],v2[1]);
+      if (n1 < 1e-6 || n2 < 1e-6) continue;
+      let cs = (v1[0]*v2[0]+v1[1]*v2[1])/(n1*n2); cs = Math.max(-1, Math.min(1, cs));
+      sum += Math.abs(Math.acos(cs)*180/Math.PI - ideal); cnt++;
+    }
+  }
+  return cnt ? sum/cnt : 0;
+}
 function _prpPendantSystems(adj, nA){
   const rings = [];
   for (const t of [5, 6, 7]){ try { for (const r of _prpFindRings(adj, nA, t)) rings.push(r); } catch(e){} }
@@ -1070,6 +1105,82 @@ function _prpPendantSystems(adj, nA){
   }
   return out;
 }
+function _prpAngDev(xy, a, b, c){
+  const v1 = [xy[a][0]-xy[b][0], xy[a][1]-xy[b][1]];
+  const v2 = [xy[c][0]-xy[b][0], xy[c][1]-xy[b][1]];
+  const n1 = Math.hypot(v1[0], v1[1]), n2 = Math.hypot(v2[0], v2[1]);
+  if (!(n1 > 1e-6 && n2 > 1e-6)) return 0;
+  const cs = Math.max(-1, Math.min(1, (v1[0]*v2[0]+v1[1]*v2[1])/(n1*n2)));
+  return Math.abs(Math.acos(cs)*180/Math.PI - 120);
+}
+/* ★ 2026-11-26: 多环系联合候选 —— 对 n 个悬挂环系按 bitmask 翻面, 再全部一起沿各自
+ *   ipso→母核反方向外推 k×中位键长。历史库 DHP/六氢喹啉酮一族, 过近原子分属两个环系,
+ *   单环系外推修不好, 必须联合。仅对缺陷分子调用, n≤5 → 最多 32×4=128 候选。 */
+function _prpGlobalCandidates(blk, xy, bonds, adj, sysList, med){
+  const out = [];
+  /* 上限 5→7: 六氢喹啉酮一族有 6 个 N-芳基环系, 过近原子可能落在第 6 个上, 取 5 会漏修。 */
+  const n = Math.min(sysList.length, 7);
+  if (n < 1) return out;
+  const dirs = sysList.slice(0, n).map(({ S, ipso }) => {
+    const piv = adj[ipso].find(a => !S.has(a));
+    if (piv === undefined) return null;
+    const dx = xy[ipso][0]-xy[piv][0], dy = xy[ipso][1]-xy[piv][1], dl = Math.hypot(dx, dy);
+    return dl > 1e-6 ? { S, ipso, ux: dx/dl, uy: dy/dl } : null;
+  });
+  for (let mask = 0; mask < (1<<n); mask++){
+    const base = xy.map(p => [p[0], p[1]]);
+    for (let i = 0; i < n; i++){
+      if (!(mask & (1<<i))) continue;
+      const { S, ipso, ring } = sysList[i];
+      let cx=0, cy=0; for (const a of ring){ cx+=xy[a][0]; cy+=xy[a][1]; }
+      cx/=ring.size; cy/=ring.size;
+      const dx=cx-xy[ipso][0], dy=cy-xy[ipso][1], dl=Math.hypot(dx,dy);
+      if (dl<1e-6) continue;
+      const ux=dx/dl, uy=dy/dl;
+      for (const a of S){ const vx=xy[a][0]-xy[ipso][0], vy=xy[a][1]-xy[ipso][1], t=vx*ux+vy*uy; base[a]=[xy[ipso][0]+2*ux*t-vx, xy[ipso][1]+2*uy*t-vy]; }
+    }
+    for (const k of [0, 0.5, 1.0, 1.5]){
+      const q = base.map(p => [p[0], p[1]]);
+      if (k) for (const d of dirs){ if (!d) continue; for (const a of d.S) q[a]=[q[a][0]+d.ux*med*k, q[a][1]+d.uy*med*k]; }
+      out.push({ b: _prpSetXY(blk, q), pivot: -1, others: [] });
+    }
+  }
+  return out;
+}
+/* ★ 2026-11-26: 卤代烷基(如 CF3/CCl3)端基扭转候选。母核上两个相邻 CF3 的 F-F 会怼到
+ *   一起(实测 nb=0.17), 而这些卤素不在任何环系里, 翻面/外推都修不了。把一个 C 连同它
+ *   ≥2 个卤素端基绕"C-母核"键轴刚性旋转 60/120/180°, 让卤素错开。 */
+function _prpHaloTwistCandidates(blk, xy, P){
+  const out = [];
+  const nA = P.nAtoms, adj = _prpBuildAdj(P.bondLines, nA);
+  const sym = (i) => ((P.atomLines[i]||'').trim().split(/\s+/)[3] || '');
+  const halo = new Set(['F','Cl','Br','I']);
+  const groups = [];
+  for (let c = 0; c < nA; c++){
+    if (sym(c) !== 'C') continue;
+    const hs = adj[c].filter(a => halo.has(sym(a)) && adj[a].length === 1);
+    const others = adj[c].filter(a => hs.indexOf(a) < 0);
+    if (hs.length >= 2 && others.length === 1) groups.push({ c, hs, piv: others[0] });
+  }
+  if (!groups.length || groups.length > 6) return out;
+  const degs = [60, 120, 180, -60, -120];
+  for (let mask = 1; mask < (1<<groups.length); mask++){
+    for (const deg of degs){
+      const q = xy.map(p => [p[0], p[1]]);
+      const th = deg*Math.PI/180, ca = Math.cos(th), sa = Math.sin(th);
+      for (let gi = 0; gi < groups.length; gi++){
+        if (!(mask & (1<<gi))) continue;
+        const g = groups[gi], px = xy[g.piv][0], py = xy[g.piv][1];
+        for (const a of [g.c].concat(g.hs)){
+          const vx = xy[a][0]-px, vy = xy[a][1]-py;
+          q[a] = [px + ca*vx - sa*vy, py + sa*vx + ca*vy];
+        }
+      }
+      out.push({ b: _prpSetXY(blk, q), pivot: -1, others: [] });
+    }
+  }
+  return out;
+}
 function _prpFixCrowding(blk){
   if (!blk) return blk;
   let P; try { P = _prpParseV2000(blk); } catch(e){ return blk; }
@@ -1080,7 +1191,12 @@ function _prpFixCrowding(blk){
   const bonds = _prpBondsOf(P.bondLines, nA);
   if (bonds.length < 3) return blk;
   const c0 = _prpCrossCount(xy, bonds);
-  if (!c0) return blk;                                  // ← 绝大多数分子在这里原样返回
+  const nb0 = _prpMinNB(xy, bonds, nA);
+  /* ★ 2026-11-26 扩展: 除了交叉, 也修"原子过近"(nb<0.40)。历史库 N-芳基邻位大取代基
+   *   在 depictor 坐标里怼母核(nb=0.22~0.25), 旧版因 c0=0 直接返回, 全库约 9000 条中招。
+   *   决定性验证: 这类分子都存在"翻面/外推"的全合格坐标(基于 A 坐标, 键长完美)。 */
+  const NEAR = 0.40;
+  if (!c0 && nb0 >= NEAR) return blk;                   // ← 绝大多数分子在这里原样返回
   const adj = _prpBuildAdj(P.bondLines, nA);
   const ds = bonds.map(([a, b]) => Math.hypot(xy[a][0]-xy[b][0], xy[a][1]-xy[b][1]));
   const med = ds.slice().sort((p, q) => p-q)[(ds.length/2)|0];
@@ -1090,12 +1206,17 @@ function _prpFixCrowding(blk){
   if (!sysList.length) return blk;
   const cands = [];
   for (const { S, ipso, ring } of sysList){
-    // ① 翻面
+    const piv = adj[ipso].find(a => !S.has(a));
+    if (piv === undefined) continue;
+    const others = adj[piv].filter(a => a !== ipso);
+    /* ★ 2026-11-26: base 先算"翻面"版(绕 ipso→环心轴镜像)。历史库 N-芳基邻位大取代基
+     *   怼母核(nb=0.22)时, 只有"翻面 + 外推"组合才能同时做到 0 交叉 + 0 过近;
+     *   旧版翻面与外推分开生成, 从不组合, 这类分子全部修不好。 */
+    const bases = [{ xy: xy, flipped: false }];
     let cx = 0, cy = 0;
     for (const a of ring){ cx += xy[a][0]; cy += xy[a][1]; }
     cx /= ring.size; cy /= ring.size;
-    let dx = cx - xy[ipso][0], dy = cy - xy[ipso][1];
-    let dl = Math.hypot(dx, dy);
+    const dx = cx - xy[ipso][0], dy = cy - xy[ipso][1], dl = Math.hypot(dx, dy);
     if (dl > 1e-6){
       const ux0 = dx/dl, uy0 = dy/dl;
       const f2 = xy.map(p => [p[0], p[1]]);
@@ -1107,48 +1228,94 @@ function _prpFixCrowding(blk){
         if (Math.hypot(nx - xy[a][0], ny - xy[a][1]) > 1e-3) moved++;
         f2[a] = [nx, ny];
       }
-      if (moved) cands.push(_prpSetXY(blk, f2));
+      if (moved) bases.push({ xy: f2, flipped: true });
     }
-    // ② 外推(沿"母核质心 → 环系质心")
-    let ccx = 0, ccy = 0, nc = 0;
-    for (let a = 0; a < nA; a++){ if (!S.has(a)){ ccx += xy[a][0]; ccy += xy[a][1]; nc++; } }
-    if (!nc) continue;
-    ccx /= nc; ccy /= nc;
-    let fx = 0, fy = 0;
-    for (const a of ring){ fx += xy[a][0]; fy += xy[a][1]; }
-    fx /= ring.size; fy /= ring.size;
-    dx = fx - ccx; dy = fy - ccy;
-    dl = Math.hypot(dx, dy);
-    if (!(dl > 1e-6)) continue;
-    const ux0 = dx/dl, uy0 = dy/dl;
-    for (const k of [0.3, 0.6, 1.0, 1.6]){
-      const p2 = xy.map(p => [p[0], p[1]]);
-      for (const a of S){ p2[a] = [xy[a][0] + ux0*med*k, xy[a][1] + uy0*med*k]; }
-      cands.push(_prpSetXY(blk, p2));
+    /* 外推 —— ★ 必须沿【系链键方向】推, 不能沿"母核质心→环系质心"(会把键角弄歪)。 */
+    const configs = [{ ca: 1, sa: 0, deg: undefined }];   // 不摆角, 沿现有键轴推
+    if (others.length === 2){
+      const u1 = [xy[others[0]][0]-xy[piv][0], xy[others[0]][1]-xy[piv][1]];
+      const u2 = [xy[others[1]][0]-xy[piv][0], xy[others[1]][1]-xy[piv][1]];
+      const l1 = Math.hypot(u1[0], u1[1]), l2 = Math.hypot(u2[0], u2[1]);
+      if (l1 > 1e-6 && l2 > 1e-6){
+        const ideal = Math.atan2(-(u1[1]/l1 + u2[1]/l2), -(u1[0]/l1 + u2[0]/l2));
+        const cur = Math.atan2(xy[ipso][1]-xy[piv][1], xy[ipso][0]-xy[piv][0]);
+        const d = ideal - cur;
+        configs.push({ ca: Math.cos(d), sa: Math.sin(d), deg: ideal });
+      }
+    }
+    for (const bs of bases){
+      for (const cfg of configs){
+        const base = bs.xy.map(p => [p[0], p[1]]);
+        if (cfg.ca !== 1 || cfg.sa !== 0){
+          for (const a of S){
+            const vx = bs.xy[a][0]-xy[piv][0], vy = bs.xy[a][1]-xy[piv][1];
+            base[a] = [xy[piv][0] + cfg.ca*vx - cfg.sa*vy, xy[piv][1] + cfg.sa*vx + cfg.ca*vy];
+          }
+        }
+        const ax = cfg.deg !== undefined ? cfg.deg : Math.atan2(base[ipso][1]-xy[piv][1], base[ipso][0]-xy[piv][0]);
+        const ux0 = Math.cos(ax), uy0 = Math.sin(ax);
+        for (const k of [0, 0.3, 0.6, 1.0, 1.6, 2.2]){
+          if (!k && (bs.flipped || cfg.ca !== 1 || cfg.sa !== 0)) continue;   // 只翻面/摆角不推: 无意义
+          const p2 = base.map(p => [p[0], p[1]]);
+          if (k){
+            const dk = med * k;
+            for (const a of S){ p2[a] = [base[a][0] + ux0*dk, base[a][1] + uy0*dk]; }
+          }
+          cands.push({ b: _prpSetXY(blk, p2), pivot: (bs.flipped ? -1 : piv), others });
+        }
+      }
     }
   }
+  /* 追加多环系联合候选(翻面 bitmask × 全体外推), 修"过近原子分属两个环系"的历史缺陷。 */
+  try { for (const g of _prpGlobalCandidates(blk, xy, bonds, adj, sysList, med)) cands.push(g); } catch(e){}
+  /* 追加卤代烷基( CF3/CCl3 )端基扭转候选, 修两个 CF3 的 F-F 冲突。 */
+  if (nb0 < NEAR || c0 > 0){
+    try { for (const g of _prpHaloTwistCandidates(blk, xy, P)) cands.push(g); } catch(e){}
+  }
   const keep = [];
-  const nb0 = _prpMinNB(xy, bonds, nA);
-  for (const b of cands){
-    let Q; try { Q = _prpParseV2000(b); } catch(e){ continue; }
+  const nearCase = (c0 === 0 && nb0 < NEAR);          // 纯"原子过近"(无交叉)的分子
+  for (const { b: cand, pivot, others } of cands){
+    let Q; try { Q = _prpParseV2000(cand); } catch(e){ continue; }
     const qxy = _prpXYOf(Q);
     if (!qxy) continue;
     const cb = _prpCrossCount(qxy, bonds);
-    if (cb >= c0) continue;
-    /* 推完不能把片断怼到别的原子上 —— 实测外推 1.6x 时出现过两原子间距 0.09 键长, 比原交叉更难看。
-     * 要求候选的非键最近距离 >= 0.45 且不劣于原坐标。 */
-    if (_prpMinNB(qxy, bonds, nA) < Math.max(0.45, nb0 - 1e-6)) continue;
-    let sc; try { sc = _prpScoreBlk(b); } catch(e){ continue; }
+    const qnb = _prpMinNB(qxy, bonds, nA);
+    if (nearCase){
+      /* 过近分子: 候选必须不引入交叉、nb 明显改善且达标。 */
+      if (cb > 0) continue;
+      if (qnb < NEAR || qnb < nb0 + 0.05) continue;
+    } else {
+      /* 交叉分子: 必须严格减少交叉, 且 nb 不劣化(>=0.45)。 */
+      if (cb >= c0) continue;
+      if (qnb < Math.max(0.45, nb0 - 1e-6)) continue;
+    }
+    /* 外推的硬上限: 系链键拉到 >2.6 倍中位就是"游丝", 图上比原来的缺陷还难看。 */
+    const cds = bonds.map(([a, c]) => Math.hypot(qxy[a][0]-qxy[c][0], qxy[a][1]-qxy[c][1]));
+    const cmed = cds.slice().sort((p, q) => p-q)[(cds.length/2)|0] || 1;
+    /* ★ 必须用真正的最长键, 不能写 cds[cds.length-1]: cds 没排序, 那只是"最后一根键"!
+     *   2026-11-26 踩过: 写错后长键上限形同虚设, 3.2 倍"游丝键"被当合格坐标选中, GATE FAIL。 */
+    if (Math.max(...cds) / cmed > 2.59) continue;
+    let sc; try { sc = _prpScoreBlk(cand); } catch(e){ continue; }
     if (!(sc <= 600)) continue;                        // 极端扭曲(系链被拉爆)宁可不选
-    keep.push({ b, cb, sc });
+    /* 键角偏差: 支点处三个键与 120° 的差之和。用户明确要求"角度弄成120度"。 */
+    let ang = 0;
+    if (pivot >= 0){
+      const ip = adj[pivot].find(a => !others.includes(a));
+      if (ip !== undefined){
+        for (const o of others) ang += _prpAngDev(qxy, o, pivot, ip);
+        if (others.length === 2) ang += _prpAngDev(qxy, others[0], pivot, others[1]);
+      }
+    }
+    keep.push({ b: cand, cb, sc, ang, qnb });
   }
   if (!keep.length) return blk;
-  /* ★ 这里不用"总分最小", 用**交叉数优先的字典序**: 交叉是"看着像画错了"的硬伤,
-   *   长一点点的系链键只是不美观。实测 1-萘基那族: 原始 2 处交叉/189.6 分,
-   *   外推 1.0×键长后 0 处交叉/232.7 分 —— 按总分选等于永远选前者, 按字典序才对。 */
-  keep.sort((x, y) => (x.cb - y.cb) || (x.sc - y.sc));
+  /* ★ 字典序:
+   *   交叉分子: 交叉数 → 支点键角偏差 → 总分(用户要 120°, 优先键长更匀)。
+   *   过近分子: 先看交叉(都应为0) → nb 越大越好 → 键角 → 总分。 */
+  if (nearCase) keep.sort((x, y) => (x.cb - y.cb) || (y.qnb - x.qnb) || (x.ang - y.ang) || (x.sc - y.sc));
+  else keep.sort((x, y) => (x.cb - y.cb) || (x.ang - y.ang) || (x.sc - y.sc));
   const best = keep[0];
-  if (globalThis.__PRP_DBG) console.log('[prp] crowding: cross', c0, '->', best.cb, '| score', _prpScoreBlk(blk).toFixed(1), '->', best.sc.toFixed(1));
+  if (globalThis.__PRP_DBG) console.log('[prp] crowding: cross', c0, '->', best.cb, '| nb', nb0.toFixed(2), '->', best.qnb.toFixed(2), '| ang', best.ang.toFixed(1), '| score', _prpScoreBlk(blk).toFixed(1), '->', best.sc.toFixed(1));
   return best.b;
 }
 
@@ -1200,7 +1367,26 @@ function molToSVG(smiles, _w, _h){
         try { blkC = _prpRelaxBonds(blk); } catch(e){ blkC = null; }
         if (blkC) blk = _prpPickBlk([blk, blkC]);
       }
-      /* 仍有键线交叉时, 追加"悬挂环系翻面/外推"候选(2026-11-26)。无交叉的分子原样返回。 */
+      /* ★ 短键兜底(2026-11-26): 若选中坐标有 <0.70 的短键(coordgen 对 N-芳基系链键天生画短,
+       *   relax 又因防挤压修不动), 改用短键 ratios 最好的那套坐标 —— depictor 键长完美,
+       *   其交叉/过近交给下面的 _prpFixCrowding 翻面+外推兜底。A/E 一套管键长、一套管间距。 */
+      const shortBond = blk && _prpHasShortBond(blk, 0.70);
+      const badAngle = blk && _prpRingAngOf(blk) > 8.0;
+      if (shortBond || badAngle){
+        const candBlks = [blkA, blkE, blk].filter(Boolean);
+        const qual = (b) => {
+          const r = _prpBondRatios(b), ang = _prpRingAngOf(b);
+          // 短键是硬伤(缺一整截); 环角次之。合格线 bmin>=0.70 且 ang<=8
+          return (r.min >= 0.70 ? 1 : 0) * 1000 - (r.min < 0.70 ? r.min*100 : 0) - ang;
+        };
+        let bestB = blk, bestQ = qual(blk);
+        for (const cb2 of candBlks){
+          const q = qual(cb2);
+          if (q > bestQ + 1e-6){ bestQ = q; bestB = cb2; }
+        }
+        blk = bestB;
+      }
+      /* 仍有键线交叉/原子过近时, 追加"悬挂环系翻面/外推"候选(2026-11-26)。 */
       if (blk){ try { blk = _prpFixCrowding(blk); } catch(e){} }
       // 调试/审计钩子: 让离线审计脚本能拿到"这一张图实际用的坐标"(浏览器控制台也可查)
       if (blk) globalThis.__PRP_LASTBLK = blk;
