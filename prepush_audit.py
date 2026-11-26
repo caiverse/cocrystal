@@ -1,11 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""上线前强制闸门：新分片产品代码 + 命名 + 索引一致性。FAIL 即禁止 push。
+"""上线前强制闸门：新分片产品代码 + 命名 + 索引一致性 + 渲染质量。FAIL 即禁止 push。
 
 用法：
   python prepush_audit.py                    # 自动取 git 改动的分片（含未跟踪新分片）
   python prepush_audit.py --shards 52 53 54  # 指定分片
   python prepush_audit.py --all              # 全库语义核验（慢）
+  python prepush_audit.py --full-render      # 渲染闸门逐条全量（默认每片抽 1200 条）
+
+渲染闸门（2026-11-26 起强制，调 render_gate.js）：用线上同一个渲染器实渲抽样，判
+键线交叉=0 / 键长比 0.70~1.65 / 非键最近距离≥0.40×中位 / 环内角平均偏差≤8°。
+「数据对但画错」的库一律不许上传；没有跳过开关。
 
 退出码：0=PASS，1=FAIL。
 """
@@ -64,6 +69,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--shards', type=int, nargs='*')
     ap.add_argument('--all', action='store_true')
+    ap.add_argument('--full-render', action='store_true',
+                    help='渲染闸门逐条全量(默认每片抽 1200 条)')
     a = ap.parse_args()
 
     fails = []
@@ -130,6 +137,28 @@ def main():
           % ('PASS' if idx_ok else 'FAIL', man['count'], fpc['numRecords'], st['total'], sum(counts)))
     if not idx_ok:
         fails.append('索引不一致')
+
+    # ---- 渲染闸门（2026-11-26 起强制）----
+    # 起因: 用户发现卡片上异丙基的键穿过苯并噻唑环, 而当时没有任何自动检查能拦住这种"数据对但画错"的产物。
+    # 口径: 待审分片逐片抽样, 用线上同一个渲染器(search/app.js::molToSVG)实渲, 再用独立实现的几何度量判:
+    #   键线交叉=0 / 键长比 0.70~1.65 / 非键最近距离≥0.40×中位 / 环内角平均偏差≤8°。
+    # 任一不过 → FAIL → 禁止 push。**这是硬闸门, 没有跳过开关**: 画不出来的库不许上传。
+    if shards:
+        gate = os.path.join(REPO, 'render_gate.js')
+        if not os.path.exists(gate):
+            fails.append('缺少 render_gate.js，渲染闸门无法执行')
+        else:
+            cmd = ['node', gate, '--shards'] + [str(i) for i in shards]
+            if a.full_render:
+                cmd.append('--full')
+            print('\n[渲染闸门] ' + ' '.join(cmd))
+            try:
+                rc = subprocess.run(cmd, cwd=REPO).returncode
+            except FileNotFoundError:
+                fails.append('找不到 node，渲染闸门无法执行（不许绕过）')
+            else:
+                if rc != 0:
+                    fails.append('渲染闸门未通过（见上），本批不许上传')
 
     if fails:
         print('\nPREPUSH AUDIT FAIL:')

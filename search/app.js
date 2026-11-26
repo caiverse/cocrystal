@@ -975,6 +975,183 @@ function stripStrayDots(svg){
   return svg;
 }
 
+/* ---------- 拥挤修复: 悬挂环系"翻面"与"外推"(2026-11-26) ----------
+ * 症状: 1-萘基等稠合芳基挂在 sp3 碳上时, RDKit 与 coordgen 两套坐标都会把它摆到母核头顶,
+ *   与苯并噻唑/嘧啶环叠在一起(BZT 片实测 0.96% 卡片不合格, 全部集中在这类)。
+ * 为什么不是"再调权重": 交叉罚项已把能选的都选了 —— 两套生成器给的都是交叉的, 没有第三套可选。
+ * 故这里补两个候选, 仍然**交给 _prpPickBlk 按总分裁决**, 分不更低就不会被采用:
+ *   ① 翻面: 把环系沿【ipso → 环心】轴镜像, ipso 在轴上不动 ⇒ 系链方向不变。对称环系(1-位萘基)
+ *      镜像后逐字节相同, 自动跳过。
+ *   ② 外推: 把环系沿"母核质心 → 环系质心"整体推远。代价是系链键变长, 但打分里长键罚(1.5/倍率)
+ *      远小于交叉罚(80/处), 所以只要推完不交叉、不叠, 打分器就会选它。
+ * 安全阀: 无交叉的分子在第一步就原样返回(输出逐字节不变); 只动"单点挂在母核上的环系", 且 ≤20 原子。 */
+function _prpXYOf(P){
+  const xy = [];
+  for (let i = 0; i < (P.nAtoms|0); i++){
+    const t = (P.atomLines[i]||'').trim().split(/\s+/);
+    const x = +t[0], y = +t[1];
+    if (!isFinite(x) || !isFinite(y)) return null;
+    xy.push([x, y]);
+  }
+  return xy;
+}
+function _prpSetXY(blk, xy){
+  const L = blk.split('\n');
+  const nA = ((L[3]||'').trim().split(/\s+/).map(Number)[0])|0;
+  for (let i = 0; i < nA; i++){
+    L[4+i] = xy[i][0].toFixed(4).padStart(10) + xy[i][1].toFixed(4).padStart(10) + (L[4+i]||'').slice(20);
+  }
+  return L.join('\n');
+}
+/* 单点悬挂在母核上的"环系"(稠环算一个整体, 萘基/喹啉基)。返回 [{S:可动原子, ipso, ring}]。
+ * 判据: 拿掉该环系后环外分成多块, 且只有一根外键通向最大那块(母核)。
+ * ★ 必须按环系而非单环判: 萘基两环彼此稠合, 单环拿掉后环外只剩一块, 会全被误排除。 */
+function _prpMinNB(xy, bonds, nA){
+  const bonded = new Set();
+  for (const [a, b] of bonds){ bonded.add(a+'-'+b); bonded.add(b+'-'+a); }
+  const ds = bonds.map(([a, b]) => Math.hypot(xy[a][0]-xy[b][0], xy[a][1]-xy[b][1]));
+  const med = ds.slice().sort((p, q) => p-q)[(ds.length/2)|0] || 1;
+  let m = 9;
+  for (let i = 0; i < nA; i++) for (let j = i+1; j < nA; j++){
+    if (bonded.has(i+'-'+j)) continue;
+    const d = Math.hypot(xy[i][0]-xy[j][0], xy[i][1]-xy[j][1]) / med;
+    if (d < m) m = d;
+  }
+  return m;
+}
+function _prpPendantSystems(adj, nA){
+  const rings = [];
+  for (const t of [5, 6, 7]){ try { for (const r of _prpFindRings(adj, nA, t)) rings.push(r); } catch(e){} }
+  if (!rings.length) return [];
+  const par = rings.map((_, i) => i);
+  const find = (i) => { while (par[i] !== i){ par[i] = par[par[i]]; i = par[i]; } return i; };
+  for (let i = 0; i < rings.length; i++){
+    for (let j = i+1; j < rings.length; j++){
+      let shared = 0;
+      for (const a of rings[i]) if (rings[j].indexOf(a) >= 0) shared++;
+      if (shared >= 2){ const x = find(i), y = find(j); if (x !== y) par[x] = y; }
+    }
+  }
+  const groups = new Map();
+  for (let i = 0; i < rings.length; i++){
+    const k = find(i);
+    if (!groups.has(k)) groups.set(k, new Set());
+    for (const a of rings[i]) groups.get(k).add(a);
+  }
+  const out = [];
+  for (const rs of groups.values()){
+    const extB = [];
+    for (const a of rs){ for (const b of adj[a]){ if (!rs.has(b)) extB.push([a, b]); } }
+    if (!extB.length) continue;
+    const compOf = new Map(), comps = [];
+    for (const [, b] of extB){
+      if (compOf.has(b)) continue;
+      const seen = new Set([b]), st = [b], id = comps.length;
+      compOf.set(b, id);
+      while (st.length){
+        const v = st.pop();
+        for (const w of adj[v]){ if (!seen.has(w) && !rs.has(w)){ seen.add(w); compOf.set(w, id); st.push(w); } }
+      }
+      comps.push(seen);
+    }
+    /* ★ 这里最容易错(2026-11-26 踩过): "环外只有一块"既可能是"稠进母核", 也可能是
+     *   "干净的悬挂环系(自己不带任何取代基)" —— 萘基正是后者。区分靠外键根数:
+     *   只有 1 根外键 = 单点挂住 = 悬挂; ≥2 根外键通向同一块 = 稠合/桥连, 不能动。 */
+    if (!comps.length) continue;
+    if (comps.length === 1 && extB.length !== 1) continue;
+    let big = 0;
+    for (let i = 1; i < comps.length; i++) if (comps[i].size > comps[big].size) big = i;
+    const toBig = extB.filter(([, b]) => compOf.get(b) === big);
+    if (toBig.length !== 1) continue;
+    const S = new Set(rs);
+    for (let i = 0; i < comps.length; i++){ if (i === big) continue; for (const a of comps[i]) S.add(a); }
+    if (S.size > 20) continue;
+    out.push({ S, ipso: toBig[0][0], ring: rs });
+  }
+  return out;
+}
+function _prpFixCrowding(blk){
+  if (!blk) return blk;
+  let P; try { P = _prpParseV2000(blk); } catch(e){ return blk; }
+  const nA = P.nAtoms|0;
+  if (!(nA > 3)) return blk;
+  const xy = _prpXYOf(P);
+  if (!xy) return blk;
+  const bonds = _prpBondsOf(P.bondLines, nA);
+  if (bonds.length < 3) return blk;
+  const c0 = _prpCrossCount(xy, bonds);
+  if (!c0) return blk;                                  // ← 绝大多数分子在这里原样返回
+  const adj = _prpBuildAdj(P.bondLines, nA);
+  const ds = bonds.map(([a, b]) => Math.hypot(xy[a][0]-xy[b][0], xy[a][1]-xy[b][1]));
+  const med = ds.slice().sort((p, q) => p-q)[(ds.length/2)|0];
+  if (!(med > 0.2)) return blk;
+  let sysList = [];
+  try { sysList = _prpPendantSystems(adj, nA); } catch(e){ sysList = []; }
+  if (!sysList.length) return blk;
+  const cands = [];
+  for (const { S, ipso, ring } of sysList){
+    // ① 翻面
+    let cx = 0, cy = 0;
+    for (const a of ring){ cx += xy[a][0]; cy += xy[a][1]; }
+    cx /= ring.size; cy /= ring.size;
+    let dx = cx - xy[ipso][0], dy = cy - xy[ipso][1];
+    let dl = Math.hypot(dx, dy);
+    if (dl > 1e-6){
+      const ux0 = dx/dl, uy0 = dy/dl;
+      const f2 = xy.map(p => [p[0], p[1]]);
+      let moved = 0;
+      for (const a of S){
+        const ux = xy[a][0] - xy[ipso][0], uy = xy[a][1] - xy[ipso][1];
+        const t = ux*ux0 + uy*uy0;
+        const nx = xy[ipso][0] + 2*ux0*t - ux, ny = xy[ipso][1] + 2*uy0*t - uy;
+        if (Math.hypot(nx - xy[a][0], ny - xy[a][1]) > 1e-3) moved++;
+        f2[a] = [nx, ny];
+      }
+      if (moved) cands.push(_prpSetXY(blk, f2));
+    }
+    // ② 外推(沿"母核质心 → 环系质心")
+    let ccx = 0, ccy = 0, nc = 0;
+    for (let a = 0; a < nA; a++){ if (!S.has(a)){ ccx += xy[a][0]; ccy += xy[a][1]; nc++; } }
+    if (!nc) continue;
+    ccx /= nc; ccy /= nc;
+    let fx = 0, fy = 0;
+    for (const a of ring){ fx += xy[a][0]; fy += xy[a][1]; }
+    fx /= ring.size; fy /= ring.size;
+    dx = fx - ccx; dy = fy - ccy;
+    dl = Math.hypot(dx, dy);
+    if (!(dl > 1e-6)) continue;
+    const ux0 = dx/dl, uy0 = dy/dl;
+    for (const k of [0.3, 0.6, 1.0, 1.6]){
+      const p2 = xy.map(p => [p[0], p[1]]);
+      for (const a of S){ p2[a] = [xy[a][0] + ux0*med*k, xy[a][1] + uy0*med*k]; }
+      cands.push(_prpSetXY(blk, p2));
+    }
+  }
+  const keep = [];
+  const nb0 = _prpMinNB(xy, bonds, nA);
+  for (const b of cands){
+    let Q; try { Q = _prpParseV2000(b); } catch(e){ continue; }
+    const qxy = _prpXYOf(Q);
+    if (!qxy) continue;
+    const cb = _prpCrossCount(qxy, bonds);
+    if (cb >= c0) continue;
+    /* 推完不能把片断怼到别的原子上 —— 实测外推 1.6x 时出现过两原子间距 0.09 键长, 比原交叉更难看。
+     * 要求候选的非键最近距离 >= 0.45 且不劣于原坐标。 */
+    if (_prpMinNB(qxy, bonds, nA) < Math.max(0.45, nb0 - 1e-6)) continue;
+    let sc; try { sc = _prpScoreBlk(b); } catch(e){ continue; }
+    if (!(sc <= 600)) continue;                        // 极端扭曲(系链被拉爆)宁可不选
+    keep.push({ b, cb, sc });
+  }
+  if (!keep.length) return blk;
+  /* ★ 这里不用"总分最小", 用**交叉数优先的字典序**: 交叉是"看着像画错了"的硬伤,
+   *   长一点点的系链键只是不美观。实测 1-萘基那族: 原始 2 处交叉/189.6 分,
+   *   外推 1.0×键长后 0 处交叉/232.7 分 —— 按总分选等于永远选前者, 按字典序才对。 */
+  keep.sort((x, y) => (x.cb - y.cb) || (x.sc - y.sc));
+  const best = keep[0];
+  if (globalThis.__PRP_DBG) console.log('[prp] crowding: cross', c0, '->', best.cb, '| score', _prpScoreBlk(blk).toFixed(1), '->', best.sc.toFixed(1));
+  return best.b;
+}
+
 /* ---------- 结构式绘制 ---------- */
 const _SVG_CACHE = new Map();
 /* W/H 默认 250×195(检索站卡片); 首页侧栏静态图要求 300×240, 由生成脚本传入。 */
@@ -1023,6 +1200,8 @@ function molToSVG(smiles, _w, _h){
         try { blkC = _prpRelaxBonds(blk); } catch(e){ blkC = null; }
         if (blkC) blk = _prpPickBlk([blk, blkC]);
       }
+      /* 仍有键线交叉时, 追加"悬挂环系翻面/外推"候选(2026-11-26)。无交叉的分子原样返回。 */
+      if (blk){ try { blk = _prpFixCrowding(blk); } catch(e){} }
       // 调试/审计钩子: 让离线审计脚本能拿到"这一张图实际用的坐标"(浏览器控制台也可查)
       if (blk) globalThis.__PRP_LASTBLK = blk;
       // 关键修正(2026-11-05, C=N 交叉双键): RDKit 写 molblock 时会把"未指定 E/Z 的双键"
