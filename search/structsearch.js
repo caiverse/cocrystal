@@ -195,9 +195,18 @@ async function collectCands(mode, QH, QE){
   const cands = [];
   let last = performance.now();
   for (let i = 0; i < DATA.length; i++){
+    if (!DATA[i]) continue;                       // 未加载分片留空
     if (!DATA[i].s) continue;
-    if (mode === 'exact'){ if (ATOM_CNT[i] !== QH) continue; }
-    else if (ATOM_CNT[i] < QH) continue;
+    // ATOM_CNT 惰性构建(加载阶段不再同步算 240 万条分子式)
+    let ac = ATOM_CNT[i];
+    if (ac == null){
+      const f = DATA[i].f || ''; ac = 0; let m;
+      const re = /([A-Z][a-z]?)(\d*)/g;
+      while ((m = re.exec(f)) !== null){ if (m[1] === 'H') continue; ac += (m[2] ? parseInt(m[2], 10) : 1); }
+      ATOM_CNT[i] = ac;
+    }
+    if (mode === 'exact'){ if (ac !== QH) continue; }
+    else if (ac < QH) continue;
     if (!elemSuperset(DATA[i].f, QE)) continue;
     cands.push(i);
     if ((i & 4095) === 4095){
@@ -213,6 +222,13 @@ async function collectCands(mode, QH, QE){
 async function runStructureSearch(){
   if (!RDKit){ alert('化学结构引擎尚未就绪，请稍候重试'); return; }
   if (STRUCT_RUNNING){ STRUCT_ABORT = true; setStructStatus('正在取消…'); return; }
+  // 结构检索按 DATA[i] 与指纹库下标对齐, 必须先补全全库分片
+  if (window.ensureAllLoaded){
+    try {
+      setStructStatus('正在补全结构检索所需数据…');
+      await window.ensureAllLoaded();
+    } catch(e){ alert('补全数据失败：' + e.message); return; }
+  }
   const mode = document.querySelector('input[name="structMode"]:checked').value;
   const raw = await getStructQuery();
   if (!raw){ alert('请先在画板绘制，或在文本框粘贴 SMILES / SMARTS'); return; }

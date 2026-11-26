@@ -4,16 +4,26 @@
  */
 'use strict';
 
-let DATA = [];
-let BLOBS = [];          // 每条记录的检索文本(小写)
+let DATA = [];           // 定长稀疏数组: 下标 = 全库序号(与指纹库下标严格一致), 未加载分片为 undefined
+let BLOBS = [];          // 每条记录的检索文本(小写), 与 DATA 同下标
 let FILTERED = [];       // 当前结果在 DATA 中的下标(经排序后的显示顺序)
 let MATCHED = [];        // 当前命中的下标(库顺序, 未经排序)
 let PER_PAGE = 24;
 let page = 0;
 let RDKit = null;
-let LIBRARY_ORDER = [];   // 产物库默认展示顺序(来自 stats.json), 供默认排序分组用
-let ATOM_CNT = [];        // [结构检索] 每条记录的重原子数(来自分子式, 不含 H), 用于子结构/精确预筛
-window.SIM_MAP = {};      // [结构检索] 记录 id -> 相似度(0..1), 仅相似度模式
+let LIBRARY_ORDER = [];  // 产物库默认展示顺序(来自 stats.json), 供默认排序分组用
+let ATOM_CNT = [];       // [结构检索] 每条记录的重原子数(来自分子式, 不含 H), 用于子结构/精确预筛
+window.SIM_MAP = {};     // [结构检索] 记录 id -> 相似度(0..1), 仅相似度模式
+
+/* ---------- 分片懒加载状态 ---------- */
+let MANIFEST = null;              // products.manifest.json
+let CATMAP = null;                // category_shards.json (类别 -> 分片名)
+let STATS_GLOBAL = null;          // stats.json
+let LOADED_SHARDS = new Set();    // 已加载分片名
+let TOTAL_COUNT = 0;
+let SHARD_LOADING = null;         // 正在进行的全量/批量加载 Promise(合并并发请求)
+let CURRENT_SCOPE = '';           // 当前数据范围: ''=全库, 否则=类别名
+window.ensureAllLoaded = null;    // 供 structsearch.js 在结构检索前调用
 
 const EXTRA_LABEL = {
   avail: '市售/文献', alkyl: '推荐烷化剂', ether_class: '类别', r_group: '烷氧基 R',
@@ -1002,105 +1012,224 @@ function molToSVG(smiles, _w, _h){
   return null;
 }
 
-/* ---------- 数据加载(支持分片) ---------- */
+/* ---------- 数据加载: 分片懒加载 ----------
+ * 关键约束: 结构检索用 DATA[i] 与指纹库 FP_OFFSETS[i] 严格一一对应,
+ * 故 DATA/BLOBS/ATOM_CNT 都是定长稀疏数组(长度=全库记录数), 按分片 offset 填槽,
+ * 绝不压缩重排。未加载的位置保持 undefined, 遍历时跳过。
+ */
+function _buildBlob(r){
+  return [
+    r.n, r.e, r.f, r.s, r.g, r.r, r.a, r.d, r.o, r.c, r.code,
+    r.x ? Object.values(r.x).join(' ') : ''
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+function _atomCount(r){
+  const f = r.f || ''; let s = 0, m; const re = /([A-Z][a-z]?)(\d*)/g;
+  while ((m = re.exec(f)) !== null){ if (m[1] === 'H') continue; s += (m[2] ? parseInt(m[2], 10) : 1); }
+  return s;
+}
+function _setLoadingText(t){ const el = document.getElementById('loading-text'); if (el) el.textContent = t; }
+function _setStatus(html){ const el = document.getElementById('status'); if (el) el.innerHTML = html; }
+function _updateMeta(){
+  const el = document.getElementById('meta');
+  if (!el) return;
+  const loaded = LOADED_SHARDS.size ? [...LOADED_SHARDS].reduce((s,n)=>s+(CATMAP && CATMAP.shardCounts ? CATMAP.shardCounts[n] : 0), 0) : 0;
+  if (CURRENT_SCOPE){
+    el.textContent = `${CURRENT_SCOPE} · 已载 ${loaded.toLocaleString()} 条 / 全库 ${TOTAL_COUNT.toLocaleString()} 条`;
+  } else if (loaded < TOTAL_COUNT){
+    el.textContent = `已载 ${loaded.toLocaleString()} / ${TOTAL_COUNT.toLocaleString()} 条（搜索将自动补全）`;
+  } else {
+    el.textContent = '共 ' + TOTAL_COUNT.toLocaleString() + ' 条';
+  }
+}
+
+// 加载指定分片(幂等); 返回是否实际发起请求
+async function loadShards(names, onProgress){
+  const todo = names.filter(n => n && !LOADED_SHARDS.has(n));
+  if (!todo.length){ if (onProgress) onProgress(1, 1); return false; }
+  for (let k = 0; k < todo.length; k++){
+    const name = todo[k];
+    const r = await fetch('data/' + name);
+    if (!r.ok) throw new Error('分片 ' + name + ' HTTP ' + r.status);
+    const arr = await r.json();
+    const off = CATMAP.shardOffsets[name];
+    if (typeof off !== 'number') throw new Error('分片 ' + name + ' 缺少 offset 映射');
+    for (let i = 0; i < arr.length; i++){
+      const idx = off + i;
+      DATA[idx] = arr[i];
+      // BLOBS/ATOM_CNT 延后构建: 加载阶段只填槽, 搜索/结构检索用到时再惰性生成,
+      // 避免一次性为 240 万条拼检索字符串阻塞主线程(实测 Node 侧直接 OOM)
+      BLOBS[idx] = null;
+      ATOM_CNT[idx] = null;
+    }
+    LOADED_SHARDS.add(name);
+    if (onProgress) onProgress(k + 1, todo.length);
+  }
+  _updateMeta();
+  return true;
+}
+
+// 全量加载(供全局搜索与结构检索调用); 并发合并, 带进度
+window.ensureAllLoaded = async function ensureAllLoaded(forceText){
+  if (!MANIFEST || !MANIFEST.shards) return;
+  if (LOADED_SHARDS.size >= MANIFEST.shards.length) return;
+  if (SHARD_LOADING) return SHARD_LOADING;
+  if (forceText) _setLoadingText('正在补全全库数据…');
+  let done = 0;
+  const total = MANIFEST.shards.length - LOADED_SHARDS.size;
+  SHARD_LOADING = loadShards(MANIFEST.shards, (a, b) => { done = a; })
+    .finally(() => { SHARD_LOADING = null; });
+  return SHARD_LOADING;
+};
+
+// 加载某个类别涉及的全部分片
+async function loadCategory(cat){
+  if (!cat || !CATMAP || !CATMAP.byCategory[cat]) return false;
+  const changed = await loadShards(CATMAP.byCategory[cat]);
+  CURRENT_SCOPE = cat;
+  _updateMeta();
+  return changed;
+}
+
 async function load(){
   const loadingText = document.getElementById('loading-text');
 
-  // 优先读取分片清单(products.manifest.json), 回退到单一 products.json(向后兼容)
-  let records = [];
-  let manifest = null;
+  // 三份轻量元数据: manifest(3KB) + stats(26KB) + category_shards(17KB)
   try {
     const mres = await fetch('data/products.manifest.json');
-    if (mres.ok) manifest = await mres.json();
-  } catch(e){ manifest = null; }
-
-  // 加载统计(含产物库默认展示顺序 library_order)
-  let STATS = null;
+    if (mres.ok) MANIFEST = await mres.json();
+  } catch(e){ MANIFEST = null; }
   try {
     const sres = await fetch('data/stats.json');
-    if (sres.ok) STATS = await sres.json();
-  } catch(e){ STATS = null; }
-  LIBRARY_ORDER = (STATS && Array.isArray(STATS.library_order)) ? STATS.library_order : [];
+    if (sres.ok) STATS_GLOBAL = await sres.json();
+  } catch(e){ STATS_GLOBAL = null; }
+  LIBRARY_ORDER = (STATS_GLOBAL && Array.isArray(STATS_GLOBAL.library_order)) ? STATS_GLOBAL.library_order : [];
 
-  if (manifest && Array.isArray(manifest.shards) && manifest.shards.length){
-    if (loadingText) loadingText.textContent =
-      `正在并行加载 ${manifest.shards.length} 个数据分片，共约 ${(manifest.count/10000).toFixed(1)} 万条…`;
-    const parts = await Promise.all(manifest.shards.map(async (name) => {
-      const r = await fetch('data/' + name);
-      if (!r.ok) throw new Error('分片 ' + name + ' HTTP ' + r.status);
-      return r.json();
-    }));
-    records = [].concat(...parts);
-  } else {
-    if (loadingText) loadingText.textContent = '正在加载产物库数据…';
+  // 无映射文件(旧部署)则回退: 一次性全量加载, 行为与旧版一致
+  let legacy = false;
+  try {
+    const cres = await fetch('data/category_shards.json');
+    if (cres.ok) CATMAP = await cres.json();
+  } catch(e){ CATMAP = null; }
+  if (!MANIFEST || !MANIFEST.shards || !CATMAP || !CATMAP.shardOffsets){ legacy = true; }
+
+  TOTAL_COUNT = legacy ? (MANIFEST ? MANIFEST.count : 0) : CATMAP.count;
+  DATA = new Array(TOTAL_COUNT);
+  BLOBS = new Array(TOTAL_COUNT);
+  ATOM_CNT = new Array(TOTAL_COUNT);
+
+  if (legacy){
+    _setLoadingText('正在加载产物库数据…');
     const res = await fetch('data/products.json');
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    records = await res.json();
+    const records = await res.json();
+    TOTAL_COUNT = records.length;
+    DATA = records;
+    BLOBS = records.map(_buildBlob);
+    ATOM_CNT = records.map(_atomCount);
+    MANIFEST = { shards: [] };
+  } else {
+    // 默认展示 library_order 的第一个类别(当前 ~7.7 万条, 3 个分片)
+    const def = CATMAP.default && CATMAP.byCategory[CATMAP.default] ? CATMAP.default : LIBRARY_ORDER[0];
+    _setLoadingText(`正在加载默认库「${def}」…`);
+    await loadShards(CATMAP.byCategory[def] || []);
+    CURRENT_SCOPE = def;
   }
 
-  DATA = records;
-  BLOBS = DATA.map(r => [
-    r.n, r.e, r.f, r.s, r.g, r.r, r.a, r.d, r.o, r.c,
-    r.code,                                  // 产品代码(结构哈希短码)纳入检索: 支持按代码查
-    r.x ? Object.values(r.x).join(' ') : ''
-  ].filter(Boolean).join(' ').toLowerCase());
-
-  // [结构检索] 重原子数(不含 H)预计算, 用于子结构/完全相同预筛
-  ATOM_CNT = DATA.map(r => {
-    const f = r.f || ''; let s = 0; let m; const re = /([A-Z][a-z]?)(\d*)/g;
-    while ((m = re.exec(f)) !== null){ if (m[1] === 'H') continue; s += (m[2] ? parseInt(m[2], 10) : 1); }
-    return s;
-  });
-
-  // 分类下拉: 优先按 stats.json 的 library_order 展示(用户指定重排顺序), 未列出的库追加到末尾
-  const counts = {};
-  DATA.forEach(r => { counts[r.g] = (counts[r.g] || 0) + 1; });
-  let cats;
-  if (STATS && Array.isArray(STATS.library_order) && STATS.library_order.length){
-    const present = new Set(Object.keys(counts));
-    cats = STATS.library_order.filter(c => present.has(c));
+  // 分类下拉: 用 stats.json 的计数(不依赖已加载数据), 保证首屏即可选任意库
+  const counts = (STATS_GLOBAL && STATS_GLOBAL.by_category) ? STATS_GLOBAL.by_category : {};
+  let cats = Object.keys(counts);
+  if (LIBRARY_ORDER.length){
+    cats = LIBRARY_ORDER.filter(c => counts[c] != null);
     Object.keys(counts).forEach(c => { if (!cats.includes(c)) cats.push(c); });
   } else {
-    cats = Object.keys(counts).sort((a,b)=>counts[b]-counts[a]);
+    cats.sort((a,b)=>counts[b]-counts[a]);
   }
   const sel = document.getElementById('catFilter');
-  cats.forEach(c => {
-    const o = document.createElement('option');
-    o.value = c; o.textContent = `${c} (${counts[c].toLocaleString()})`;
-    sel.appendChild(o);
-  });
-  document.getElementById('meta').textContent = '共 ' + DATA.length.toLocaleString() + ' 条';
+  if (sel){
+    sel.innerHTML = '<option value="">全部分类</option>';
+    const def = CATMAP ? CATMAP.default : '';
+    cats.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c; o.textContent = `${c} (${(counts[c]||0).toLocaleString()})`;
+      if (c === def) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+  _updateMeta();
+  return TOTAL_COUNT;
 }
 
 /* ---------- 检索 ---------- */
-function search(){
+let SEARCH_SEQ = 0;          // 后来者覆盖: 新输入作废旧检索, 不丢帧
+async function search(){
+  const mySeq = ++SEARCH_SEQ;
   const t0 = performance.now();
-  window.SIM_MAP = {};   // 文本检索时清除结构检索遗留的相似度标注
-  const q = document.getElementById('search').value.trim().toLowerCase();
-  const cat = document.getElementById('catFilter').value;
-  const terms = q.split(/\s+/).filter(Boolean);
-  const isCodeQuery = q.startsWith('cc-');   // 以 CC- 开头视为产品代码精确/前缀检索
-  const out = [];
-  for (let i = 0; i < DATA.length; i++){
-    if (cat && DATA[i].g !== cat) continue;
-    let ok = true;
-    if (isCodeQuery){
-      const code = (DATA[i].code || '').toLowerCase();
-      if (!code.startsWith(q)) ok = false;          // 完整码=精确命中, 部分码=前缀命中
-    } else if (terms.length){
-      const blob = BLOBS[i];
-      for (const t of terms){ if (!blob.includes(t)){ ok = false; break; } }
+  try {
+    window.SIM_MAP = {};   // 文本检索时清除结构检索遗留的相似度标注
+    const q = document.getElementById('search').value.trim().toLowerCase();
+    const cat = document.getElementById('catFilter').value;
+    const terms = q.split(/\s+/).filter(Boolean);
+    const isCodeQuery = q.startsWith('cc-');   // 以 CC- 开头视为产品代码精确/前缀检索
+
+    // 范围切换: 指定类别 -> 只加载该类别分片; 全部分类 -> 补全全库
+    if (cat){
+      if (CURRENT_SCOPE !== cat){
+        _setStatus('正在加载「' + cat + '」数据…');
+        await loadCategory(cat);
+        if (mySeq !== SEARCH_SEQ) return;
+      }
+    } else if (CATMAP && CATMAP.shardOffsets && LOADED_SHARDS.size < MANIFEST.shards.length){
+      _setLoadingText('正在加载全库数据（约 ' + (TOTAL_COUNT/10000).toFixed(1) + ' 万条），首次约需数秒…');
+      const ld = document.getElementById('loading');
+      if (ld) ld.style.display = 'flex';
+      try { await window.ensureAllLoaded(true); }
+      finally { if (ld) ld.style.display = 'none'; }
+      if (mySeq !== SEARCH_SEQ) return;
+      CURRENT_SCOPE = '';
+      _updateMeta();
     }
-    if (ok) out.push(i);
+
+    const out = [];
+    // 时间切片: 每 2 万条让出主线程, 全库检索时输入框不再冻结。
+    // 不用 Web Worker 的原因: DATA 是 240 万条定长稀疏数组, 结构化克隆到 Worker
+    // 的成本(内存翻倍+秒级拷贝)远大于收益; 且 Worker 内无法直接共享 BLOBS 缓存。
+    const SLICE = 20000;
+    for (let start = 0; start < DATA.length; start += SLICE){
+      const end = Math.min(start + SLICE, DATA.length);
+      for (let i = start; i < end; i++){
+        const rec = DATA[i];
+        if (!rec) continue;                    // 跳过未加载分片
+        if (cat && rec.g !== cat) continue;
+        let ok = true;
+        if (isCodeQuery){
+          const code = (rec.code || '').toLowerCase();
+          if (!code.startsWith(q)) ok = false;
+        } else if (terms.length){
+          let blob = BLOBS[i];
+          if (blob == null) blob = BLOBS[i] = _buildBlob(rec);
+          for (const t of terms){ if (!blob.includes(t)){ ok = false; break; } }
+        }
+        if (ok) out.push(i);
+      }
+      if (end < DATA.length){
+        await new Promise(r => setTimeout(r, 0));
+        if (mySeq !== SEARCH_SEQ) return;      // 已被新输入取代, 丢弃本次结果
+      }
+    }
+    if (mySeq !== SEARCH_SEQ) return;
+    MATCHED = out;
+    applySort();
+    page = 0;
+    const dt = (performance.now() - t0).toFixed(0);
+    const modeHint = isCodeQuery ? '（按产品代码精确检索）' : '';
+    _setStatus('匹配 <b>' + FILTERED.length.toLocaleString() + '</b> 条 · 用时 ' + dt + ' ms' + modeHint
+      + (CURRENT_SCOPE ? ' · 当前库：' + CURRENT_SCOPE : ''));
+    render();
+  } catch(e){
+    console.error('检索失败:', e);
+    _setStatus('检索失败：' + e.message);
   }
-  MATCHED = out;
-  applySort();
-  page = 0;
-  const dt = (performance.now() - t0).toFixed(0);
-  const modeHint = isCodeQuery ? '（按产品代码精确检索）' : '';
-  document.getElementById('status').innerHTML =
-    '匹配 <b>' + FILTERED.length.toLocaleString() + '</b> 条 · 用时 ' + dt + ' ms' + modeHint;
-  render();
 }
 
 /* ---------- 排序(前端, 仅影响显示顺序) ---------- */

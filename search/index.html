@@ -96,7 +96,7 @@
 </div>
 
 <div class="foot">
-  <div id="srcInfo">数据来源：93 个产物库与原料库（89 个产物库 + 4 个原料库，按 88 个分类聚合，共 1,101,322 条），全部带结构 SMILES；结构式由 RDKit 本地渲染，支持砷/金属等杂元素。</div>
+  <div id="srcInfo">数据来源：正在读取产物库统计…</div>
   <div>检索字段：产物名称、英文名、分子式、SMILES、产品代码（CC- 开头，点卡片可复制）、反应分类、来源库、所用试剂、CCDC 编号。多关键词空格分隔为「与」关系。</div>
   <div><b>结构检索</b>：在上方“结构检索”面板用画板绘制或粘贴 SMILES/SMARTS，支持子结构、完全相同、相似度 Top-N 三种模式，结果同样展示于下方卡片网格。</div>
 </div>
@@ -124,6 +124,12 @@
     fetch('data/products.manifest.json').then(function(r){return r.json();}).catch(function(){return null;})
   ]).then(function(a){fill(a[0],a[1]);}).catch(function(){});
 })();
+// 分片缓存: 仅缓存不可变的 products/fp 分片, 回访免下载。失败不影响检索。
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('sw.js').catch(function(){});
+  });
+}
 </script>
 </body>
 </html>
