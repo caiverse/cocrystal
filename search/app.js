@@ -1742,21 +1742,31 @@ async function search(){
     const isCodeQuery = q.startsWith('cc-');   // 以 CC- 开头视为产品代码精确/前缀检索
 
     // 范围切换: 指定类别 -> 只加载该类别分片; 全部分类 -> 补全全库
+    // ★ 但"空关键词 + 全部分类"是首屏状态, 不补全全库 —— 否则一打开就拉 84 个分片把页面卡死。
+    //   只展示 load() 已加载的那个默认库; 用户真正输入关键词时才补全全库做跨库检索。
     if (cat){
       if (CURRENT_SCOPE !== cat){
         _setStatus('正在加载「' + cat + '」数据…');
         await loadCategory(cat);
         if (mySeq !== SEARCH_SEQ) return;
       }
-    } else if (CATMAP && CATMAP.shardOffsets && LOADED_SHARDS.size < MANIFEST.shards.length){
-      _setLoadingText('正在加载全库数据（约 ' + (TOTAL_COUNT/10000).toFixed(1) + ' 万条），首次约需数秒…');
-      const ld = document.getElementById('loading');
-      if (ld) ld.style.display = 'flex';
-      try { await window.ensureAllLoaded(true); }
-      finally { if (ld) ld.style.display = 'none'; }
-      if (mySeq !== SEARCH_SEQ) return;
-      CURRENT_SCOPE = '';
+    } else if (!terms.length){
+      // 首屏: 保持 load() 设的默认库 scope, 不补全、不清空, 让用户看到"当前库 XXX · 已载 N 条"
       _updateMeta();
+    } else {
+      /* 有关键词 + 全部分类: 两段式。
+       * 先立刻在"已加载"的分片里搜, 用户马上看到结果、页面不卡;
+       * 再后台静默补全全库, 补完后自动重搜一次把结果扩展到全库。 */
+      const needFull = CATMAP && CATMAP.shardOffsets && LOADED_SHARDS.size < MANIFEST.shards.length;
+      if (needFull && !window._bgLoading){
+        window._bgLoading = true;
+        window.ensureAllLoaded().then(() => {
+          window._bgLoading = false;
+          if (mySeq === SEARCH_SEQ) return;      // 用户已在补全新输入, 让它自己搜
+          search();                              // 补全完成, 自动重搜扩展到全库
+        }).catch(() => { window._bgLoading = false; });
+      }
+      if (!needFull){ CURRENT_SCOPE = ''; _updateMeta(); }
     }
 
     const out = [];
@@ -1792,8 +1802,10 @@ async function search(){
     page = 0;
     const dt = (performance.now() - t0).toFixed(0);
     const modeHint = isCodeQuery ? '（按产品代码精确检索）' : '';
-    _setStatus('匹配 <b>' + FILTERED.length.toLocaleString() + '</b> 条 · 用时 ' + dt + ' ms' + modeHint
-      + (CURRENT_SCOPE ? ' · 当前库：' + CURRENT_SCOPE : ''));
+    const scopeHint = (!cat && terms.length && LOADED_SHARDS.size < MANIFEST.shards.length)
+      ? ' · 已载 ' + LOADED_SHARDS.size + '/' + MANIFEST.shards.length + ' 分片（后台补全中，稍后自动扩展到全库）'
+      : (CURRENT_SCOPE ? ' · 当前库：' + CURRENT_SCOPE : '');
+    _setStatus('匹配 <b>' + FILTERED.length.toLocaleString() + '</b> 条 · 用时 ' + dt + ' ms' + modeHint + scopeHint);
     render();
   } catch(e){
     console.error('检索失败:', e);
