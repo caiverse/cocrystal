@@ -1425,9 +1425,12 @@ function _prpFixCrowding(blk){
   if (!keep.length) return blk;
   /* ★ 字典序(2026-11-27): 交叉数 → 键角是否仍近似 120°(总偏差≤24°) → 最长键比(越短越好看)
    *   → 角偏差 → 总分。旧版把全局候选的 ang 当 0, 会为了 120° 选中 2.0 倍游丝键。 */
-  const angRank = v => (v.ang <= 24 ? 0 : 1);
-  if (nearCase) keep.sort((x, y) => (x.cb - y.cb) || (angRank(x)-angRank(y)) || (x.bmax-y.bmax) || (y.qnb - x.qnb) || (x.ang - y.ang) || (x.sc - y.sc));
-  else keep.sort((x, y) => (x.cb - y.cb) || (angRank(x)-angRank(y)) || (x.bmax-y.bmax) || (x.ang - y.ang) || (x.sc - y.sc));
+  /* ★ 2026-11-27 二次修正: 只看键长比会把 nb=0.404 的候选选上, 两个环贴到视觉相撞。
+   *   先要求 nb>=0.50 才算"看得过去", 再要求支点角总偏差<=36°, 然后才比键长。 */
+  const angRank = v => (v.ang <= 36 ? 0 : 1);
+  const nbRank  = v => (v.qnb >= 0.50 ? 0 : 1);
+  if (nearCase) keep.sort((x, y) => (x.cb - y.cb) || (nbRank(x)-nbRank(y)) || (angRank(x)-angRank(y)) || (y.qnb - x.qnb) || (x.ang - y.ang) || (x.sc - y.sc));
+  else keep.sort((x, y) => (x.cb - y.cb) || (nbRank(x)-nbRank(y)) || (angRank(x)-angRank(y)) || (x.bmax-y.bmax) || (x.ang - y.ang) || (x.sc - y.sc));
   const best = keep[0];
   if (globalThis.__PRP_DBG) console.log('[prp] crowding: cross', c0, '->', best.cb, '| nb', nb0.toFixed(2), '->', best.qnb.toFixed(2), '| ang', best.ang.toFixed(1), '| score', _prpScoreBlk(blk).toFixed(1), '->', best.sc.toFixed(1));
   return best.b;

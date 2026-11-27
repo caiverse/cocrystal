@@ -6,7 +6,7 @@
  *  - 所有长循环按时间切片: 每 ~24ms 让出主线程一次并刷新进度条, 页面不卡死;
  *  - 候选分子对象用完立即 delete(), 避免 WASM 堆内存无限增长(此前假死的根因之一);
  *  - 相似度用 2048 位查表(Uint8Array)代替逐位二分, 快一个数量级;
- *  - 运行中"运行结构检索"按钮变为"取消检索", 可随时中止。
+ *  - 运行中"结构检索"按钮变为"取消检索", 可随时中止。
  */
 'use strict';
 
@@ -188,7 +188,7 @@ function setStructProgress(f){
 function setRunButtonRunning(on){
   const b = document.getElementById('btnStructRun');
   if (!b) return;
-  b.textContent = on ? '取消检索' : '运行结构检索';
+  b.textContent = on ? '取消检索' : '结构检索';
 }
 // 预筛候选(子结构: 重原子数>=QH; 完全相同: ===QH), 时间切片防卡顿
 async function collectCands(mode, QH, QE){

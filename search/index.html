@@ -64,7 +64,7 @@
     <button id="btnLoadKetcher" class="btn">加载画板（Ketcher 在线绘制）</button>
     <div id="ketcherStatus" class="ketcher-status"></div>
     <div id="ketcherFrameWrap" class="ketcher-wrap"></div>
-    <textarea id="structInput" class="struct-input" placeholder="或直接粘贴 SMILES / SMARTS（如 c1ccccc1、c1ccncc1、CC(=O)O）。绘制或粘贴后点“运行结构检索”。"></textarea>
+    <textarea id="structInput" class="struct-input" placeholder="或直接粘贴 SMILES / SMARTS（如 c1ccccc1、c1ccncc1、CC(=O)O）。绘制或粘贴后点“结构检索”。"></textarea>
     <div class="ex-row">
       <span>示例：</span>
       <button class="exSmiles" data-smiles="c1ccccc1">苯环</button>
@@ -81,7 +81,7 @@
       <label><input type="radio" name="structMode" value="similar"> 相似度</label>
       <span id="structTopNWrap" class="topn" style="display:none">Top-N <input id="structTopN" type="number" min="1" max="500" value="50"></span>
     </div>
-    <button id="btnStructRun" class="btn btn-primary">运行结构检索</button>
+    <button id="btnStructRun" class="btn btn-primary">结构检索</button>
     <div id="structStatus" class="struct-status"></div>
     <div class="progress"><div id="structProgressBar" class="progress-bar"></div></div>
     <div class="hint">提示：子结构对“宽泛查询”（如裸苯环）命中多、耗时较长，期间可随时点“取消检索”中止；母核/取代片段越具体越快。完全相同＝同分子式且图同构；相似度基于 Morgan 指纹 Tanimoto。</div>
