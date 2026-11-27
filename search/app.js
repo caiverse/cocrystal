@@ -1560,14 +1560,32 @@ function _updateMeta(){
   }
 }
 
+/* 单个分片 fetch: 带重试。GitHub Pages/CDN 偶发 503(尤其连续拉 84 个分片时),
+ * 旧版一次失败就弹"补全数据失败"把整轮检索废掉 —— 实测 products.41.json 8MB 被 503 命中。
+ * 重试 3 次 + 指数退避, 并对 503/429/5xx 单独等待更久。 */
+async function _fetchShardWithRetry(name){
+  let lastErr = null;
+  for (let attempt = 0; attempt < 4; attempt++){
+    try {
+      const r = await fetch('data/' + name, { cache: 'force-cache' });
+      if (r.ok) return r;
+      lastErr = new Error('分片 ' + name + ' HTTP ' + r.status);
+      if (r.status < 500 && r.status !== 429) throw lastErr;   // 4xx(非429)重试无用, 立即失败
+    } catch(e){
+      lastErr = e;
+      if (e && e.message && /HTTP 4\d\d/.test(e.message) && !/429/.test(e.message)) throw e;
+    }
+    if (attempt < 3) await new Promise(res => setTimeout(res, 350 * Math.pow(2, attempt)));
+  }
+  throw lastErr || new Error('分片 ' + name + ' 加载失败');
+}
 // 加载指定分片(幂等); 返回是否实际发起请求
 async function loadShards(names, onProgress){
   const todo = names.filter(n => n && !LOADED_SHARDS.has(n));
   if (!todo.length){ if (onProgress) onProgress(1, 1); return false; }
   for (let k = 0; k < todo.length; k++){
     const name = todo[k];
-    const r = await fetch('data/' + name);
-    if (!r.ok) throw new Error('分片 ' + name + ' HTTP ' + r.status);
+    const r = await _fetchShardWithRetry(name);
     const arr = await r.json();
     const off = CATMAP.shardOffsets[name];
     if (typeof off !== 'number') throw new Error('分片 ' + name + ' 缺少 offset 映射');
