@@ -1561,11 +1561,12 @@ function _updateMeta(){
 }
 
 /* 单个分片 fetch: 带重试。GitHub Pages/CDN 偶发 503(尤其连续拉 84 个分片时),
- * 旧版一次失败就弹"补全数据失败"把整轮检索废掉 —— 实测 products.41.json 8MB 被 503 命中。
- * 重试 3 次 + 指数退避, 并对 503/429/5xx 单独等待更久。 */
+ * 旧版一次失败就弹"补全数据失败"把整轮检索废掉 —— 实测 products.41.json 8MB 被 503 命中,
+ * 而实测该文件第三次请求耗时 36s, 说明 CDN 抖动可达几十秒, 短退避(350/700/1400ms)扛不住。
+ * 改为 5 次重试 + 长退避 1s/2s/4s/8s/16s(累计 31s), 且对 503/429 再加抖动。 */
 async function _fetchShardWithRetry(name){
   let lastErr = null;
-  for (let attempt = 0; attempt < 4; attempt++){
+  for (let attempt = 0; attempt < 6; attempt++){
     try {
       const r = await fetch('data/' + name, { cache: 'force-cache' });
       if (r.ok) return r;
@@ -1575,30 +1576,63 @@ async function _fetchShardWithRetry(name){
       lastErr = e;
       if (e && e.message && /HTTP 4\d\d/.test(e.message) && !/429/.test(e.message)) throw e;
     }
-    if (attempt < 3) await new Promise(res => setTimeout(res, 350 * Math.pow(2, attempt)));
+    if (attempt < 5) await new Promise(res => setTimeout(res, 1000 * Math.pow(2, attempt)));
   }
   throw lastErr || new Error('分片 ' + name + ' 加载失败');
 }
-// 加载指定分片(幂等); 返回是否实际发起请求
+/* 把一个分片的内容填进 DATA/BLOBS/ATOM_CNT(幂等)。失败不抛, 返回 false。 */
+function _installShard(name, arr){
+  const off = CATMAP.shardOffsets[name];
+  if (typeof off !== 'number') return false;
+  for (let i = 0; i < arr.length; i++){
+    const idx = off + i;
+    DATA[idx] = arr[i];
+    // BLOBS/ATOM_CNT 延后构建: 加载阶段只填槽, 搜索/结构检索用到时再惰性生成,
+    // 避免一次性为 240 万条拼检索字符串阻塞主线程(实测 Node 侧直接 OOM)
+    BLOBS[idx] = null;
+    ATOM_CNT[idx] = null;
+  }
+  LOADED_SHARDS.add(name);
+  return true;
+}
+// 加载指定分片(幂等); 返回是否实际发起请求。
+// ★ 单个分片失败不再整轮报废: 记入 FAILED_SHARDS 继续其余分片, 最后集中二次重试。
+let FAILED_SHARDS = [];
+window.FAILED_SHARDS = FAILED_SHARDS;
 async function loadShards(names, onProgress){
   const todo = names.filter(n => n && !LOADED_SHARDS.has(n));
   if (!todo.length){ if (onProgress) onProgress(1, 1); return false; }
+  const pending = [];
   for (let k = 0; k < todo.length; k++){
     const name = todo[k];
-    const r = await _fetchShardWithRetry(name);
-    const arr = await r.json();
-    const off = CATMAP.shardOffsets[name];
-    if (typeof off !== 'number') throw new Error('分片 ' + name + ' 缺少 offset 映射');
-    for (let i = 0; i < arr.length; i++){
-      const idx = off + i;
-      DATA[idx] = arr[i];
-      // BLOBS/ATOM_CNT 延后构建: 加载阶段只填槽, 搜索/结构检索用到时再惰性生成,
-      // 避免一次性为 240 万条拼检索字符串阻塞主线程(实测 Node 侧直接 OOM)
-      BLOBS[idx] = null;
-      ATOM_CNT[idx] = null;
+    try {
+      const r = await _fetchShardWithRetry(name);
+      const arr = await r.json();
+      if (!_installShard(name, arr)) pending.push(name);
+    } catch(e){
+      pending.push(name);
+      if (e && e.message && /HTTP 4\d\d/.test(e.message) && !/429/.test(e.message)) throw e;
     }
-    LOADED_SHARDS.add(name);
     if (onProgress) onProgress(k + 1, todo.length);
+  }
+  // 第二轮: 把失败分片再整体重试一次, 每片之间留 1.5s 让 CDN 缓过来
+  if (pending.length){
+    const still = [];
+    for (const name of pending){
+      if (LOADED_SHARDS.has(name)) continue;
+      try {
+        await new Promise(res => setTimeout(res, 1500));
+        const r = await _fetchShardWithRetry(name);
+        const arr = await r.json();
+        if (!_installShard(name, arr)) still.push(name);
+      } catch(e){ still.push(name); }
+    }
+    FAILED_SHARDS = still;
+    window.FAILED_SHARDS = still;
+    if (still.length && window.console) console.warn('[检索] 以下分片加载失败, 结果将不完整:', still.join(', '));
+  } else {
+    FAILED_SHARDS = [];
+    window.FAILED_SHARDS = [];
   }
   _updateMeta();
   return true;

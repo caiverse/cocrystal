@@ -228,6 +228,10 @@ async function runStructureSearch(){
       setStructStatus('正在补全结构检索所需数据…');
       await window.ensureAllLoaded();
     } catch(e){ alert('补全数据失败：' + e.message); return; }
+    // 分片加载现在容错: 个别分片失败不再整轮报废, 但结果会缺那几片, 明确告知用户
+    if (window.FAILED_SHARDS && window.FAILED_SHARDS.length){
+      setStructStatus('注意：' + window.FAILED_SHARDS.length + ' 个分片加载失败，结果可能不完整；仍可继续检索');
+    }
   }
   const mode = document.querySelector('input[name="structMode"]:checked').value;
   const raw = await getStructQuery();
