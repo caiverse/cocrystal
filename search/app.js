@@ -1181,6 +1181,122 @@ function _prpHaloTwistCandidates(blk, xy, P){
   }
   return out;
 }
+/* ★ 2026-11-27: 多环系联合"小角度旋转 + 各自外推"候选。
+ * 旧全局候选只会把两个悬挂环系一起沿原键轴推 k=1(键长比 2.0), 没试过"萘基先绕支点转 5°
+ * 再只推 0.6"这种组合。实测同一分子有 cross=0/nb=0.404/键长比 1.6/支点角偏差 20° 的解,
+ * 明显比 2.0 的游丝键好看。仅对缺陷分子且悬挂环系 ≤2 个时启用。 */
+function _prpJointRotateCandidates(blk, xy, bonds, adj, sysList, med){
+  const out=[];
+  if (!sysList.length || sysList.length>2) return out;
+  const info=sysList.map(s=>{
+    const piv=adj[s.ipso].find(a=>!s.S.has(a));
+    return { S:s.S, ipso:s.ipso, piv, others:adj[piv].filter(a=>a!==s.ipso) };
+  }).filter(d=>d.piv!==undefined);
+  if (!info.length) return out;
+  const degs=[-10,-5,0,5,10,15,20];
+  const ks=[0,0.2,0.4,0.6,0.8,1.0];
+  const rec=(i,q)=>{
+    if(i===info.length){ out.push({ b:_prpSetXY(blk,q), pivot:-1, others:[] }); return; }
+    const d=info[i];
+    for(const deg of degs){
+      const q1=q.map(p=>[p[0],p[1]]);
+      if(deg){
+        const th=deg*Math.PI/180, ca=Math.cos(th), sa=Math.sin(th);
+        const px=xy[d.piv][0], py=xy[d.piv][1];
+        for(const a of d.S){ const vx=q[a][0]-px, vy=q[a][1]-py; q1[a]=[px+ca*vx-sa*vy, py+sa*vx+ca*vy]; }
+      }
+      for(const k of ks){
+        const q2=q1.map(p=>[p[0],p[1]]);
+        if(k){
+          const dx=q1[d.ipso][0]-xy[d.piv][0], dy=q1[d.ipso][1]-xy[d.piv][1], dl=Math.hypot(dx,dy);
+          if(dl>1e-6) for(const a of d.S) q2[a]=[q2[a][0]+dx/dl*med*k, q2[a][1]+dy/dl*med*k];
+        }
+        rec(i+1,q2);
+      }
+    }
+  };
+  rec(0,xy);
+  return out;
+}
+/* ★ 2026-11-27: 极端分子(6 个悬挂环系)的冲突定向候选。
+ * 不再对全部环系做笛卡尔积, 而是先从"真相交键对 + 最近非键原子对"反查涉及哪两个环系,
+ * 只旋转/外推这两个, 其余保持不动 —— 实测剩余 2 条历史死角都只涉及 2 个环系。 */
+function _prpConflictRotateCandidates(blk, xy, bonds, adj, sysList, med){
+  const out=[];
+  if (sysList.length < 2) return out;
+  const sid = new Map();
+  sysList.forEach((s,i)=>{ for(const a of s.S) sid.set(a,i); });
+  const seg=(a,b,c,d)=>{
+    const cr=(p,q,r)=>(q[0]-p[0])*(r[1]-p[1])-(q[1]-p[1])*(r[0]-p[0]);
+    const d1=cr(xy[c],xy[d],xy[a]),d2=cr(xy[c],xy[d],xy[b]),d3=cr(xy[a],xy[b],xy[c]),d4=cr(xy[a],xy[b],xy[d]);
+    return ((d1>0&&d2<0)||(d1<0&&d2>0))&&((d3>0&&d4<0)||(d3<0&&d4>0));
+  };
+  const hits=[];
+  for(let i=0;i<bonds.length;i++) for(let j=i+1;j<bonds.length;j++){
+    const [a,b]=bonds[i], [c,d]=bonds[j];
+    if(a===c||a===d||b===c||b===d) continue;
+    if(!seg(a,b,c,d)) continue;
+    hits.push([sid.get(a),sid.get(b),sid.get(c),sid.get(d)]);
+  }
+  const bonded=new Set(); for(const [a,b] of bonds){ bonded.add(a+'-'+b); bonded.add(b+'-'+a); }
+  let best=[9,-1,-1];
+  for(let i=0;i<sysList.length;i++) for(let j=i+1;j<sysList.length;j++){
+    // 取两个环系间最近非键距离
+    let m=9;
+    for(const a of sysList[i].S) for(const b of sysList[j].S){
+      if(bonded.has(a+'-'+b)) continue;
+      const d=Math.hypot(xy[a][0]-xy[b][0],xy[a][1]-xy[b][1]);
+      if(d<m) m=d;
+    }
+    if(m<best[0]) best=[m,i,j];
+  }
+  if(best[1]>=0) hits.push([best[1],best[2]]);
+  const freq=new Map();
+  for(const h of hits) for(const id of h){ if(id!==undefined && id>=0) freq.set(id,(freq.get(id)||0)+1); }
+  const pick=[...freq.entries()].sort((a,b)=>b[1]-a[1]).slice(0,2).map(x=>x[0]);
+  if(pick.length<2) return out;
+  const info=pick.map(id=>{
+    const s=sysList[id], piv=adj[s.ipso].find(a=>!s.S.has(a));
+    return { S:s.S, ipso:s.ipso, piv };
+  }).filter(d=>d.piv!==undefined);
+  if(info.length<2) return out;
+  const degs=[-15,-10,-5,0,5,10,15,20,25,30];
+  const ks=[0,0.2,0.4,0.6,0.8,1.0];
+  const rec=(i,q)=>{
+    if(i===info.length){ out.push({b:_prpSetXY(blk,q), pivot:-1, others:[]}); return; }
+    const d=info[i];
+    for(const deg of degs){
+      const q1=q.map(p=>[p[0],p[1]]);
+      if(deg){
+        const th=deg*Math.PI/180, ca=Math.cos(th), sa=Math.sin(th), px=xy[d.piv][0], py=xy[d.piv][1];
+        for(const a of d.S){ const vx=q[a][0]-px, vy=q[a][1]-py; q1[a]=[px+ca*vx-sa*vy, py+sa*vx+ca*vy]; }
+      }
+      for(const k of ks){
+        const q2=q1.map(p=>[p[0],p[1]]);
+        if(k){
+          const dx=q1[d.ipso][0]-xy[d.piv][0],dy=q1[d.ipso][1]-xy[d.piv][1],dl=Math.hypot(dx,dy);
+          if(dl>1e-6) for(const a of d.S) q2[a]=[q2[a][0]+dx/dl*med*k,q2[a][1]+dy/dl*med*k];
+        }
+        rec(i+1,q2);
+      }
+    }
+  };
+  rec(0,xy);
+  return out;
+}
+/* 所有悬挂环系的支点角偏差之和(旧代码只给 pivot>=0 的候选算, 全局候选恒 0)。 */
+function _prpCrowdAng(qxy, adj, sysList){
+  let total=0;
+  for(const s of sysList){
+    const piv=adj[s.ipso].find(a=>!s.S.has(a));
+    if(piv===undefined) continue;
+    const others=adj[piv].filter(a=>a!==s.ipso);
+    if(others.length!==2) continue;
+    for(const o of others) total+=_prpAngDev(qxy,o,piv,s.ipso);
+    total+=_prpAngDev(qxy,others[0],piv,others[1]);
+  }
+  return total;
+}
 function _prpFixCrowding(blk){
   if (!blk) return blk;
   let P; try { P = _prpParseV2000(blk); } catch(e){ return blk; }
@@ -1272,6 +1388,10 @@ function _prpFixCrowding(blk){
   if (nb0 < NEAR || c0 > 0){
     try { for (const g of _prpHaloTwistCandidates(blk, xy, P)) cands.push(g); } catch(e){}
   }
+  /* 联合小角度旋转候选: 修"红框系链过长"——只转一个环系、只推另一个, 比两个一起推更短。 */
+  try { for (const g of _prpJointRotateCandidates(blk, xy, bonds, adj, sysList, med)) cands.push(g); } catch(e){}
+  /* 极端分子: 只旋转/外推冲突涉及的那两个环系, 6 个环系也不会组合爆炸。 */
+  try { for (const g of _prpConflictRotateCandidates(blk, xy, bonds, adj, sysList, med)) cands.push(g); } catch(e){}
   const keep = [];
   const nearCase = (c0 === 0 && nb0 < NEAR);          // 纯"原子过近"(无交叉)的分子
   for (const { b: cand, pivot, others } of cands){
@@ -1285,35 +1405,29 @@ function _prpFixCrowding(blk){
       if (cb > 0) continue;
       if (qnb < NEAR || qnb < nb0 + 0.05) continue;
     } else {
-      /* 交叉分子: 必须严格减少交叉, 且 nb 不劣化(>=0.45)。 */
+      /* 交叉分子: 必须严格减少交叉, 且 nb 不劣化(硬线 0.40 = 上线闸门线)。 */
       if (cb >= c0) continue;
-      if (qnb < Math.max(0.45, nb0 - 1e-6)) continue;
+      if (qnb < 0.40 || qnb < nb0 - 1e-6) continue;
     }
     /* 外推的硬上限: 系链键拉到 >2.6 倍中位就是"游丝", 图上比原来的缺陷还难看。 */
     const cds = bonds.map(([a, c]) => Math.hypot(qxy[a][0]-qxy[c][0], qxy[a][1]-qxy[c][1]));
     const cmed = cds.slice().sort((p, q) => p-q)[(cds.length/2)|0] || 1;
     /* ★ 必须用真正的最长键, 不能写 cds[cds.length-1]: cds 没排序, 那只是"最后一根键"!
      *   2026-11-26 踩过: 写错后长键上限形同虚设, 3.2 倍"游丝键"被当合格坐标选中, GATE FAIL。 */
-    if (Math.max(...cds) / cmed > 2.59) continue;
+    const bmax = Math.max(...cds) / cmed;
+    if (bmax > 2.59) continue;
     let sc; try { sc = _prpScoreBlk(cand); } catch(e){ continue; }
     if (!(sc <= 600)) continue;                        // 极端扭曲(系链被拉爆)宁可不选
-    /* 键角偏差: 支点处三个键与 120° 的差之和。用户明确要求"角度弄成120度"。 */
-    let ang = 0;
-    if (pivot >= 0){
-      const ip = adj[pivot].find(a => !others.includes(a));
-      if (ip !== undefined){
-        for (const o of others) ang += _prpAngDev(qxy, o, pivot, ip);
-        if (others.length === 2) ang += _prpAngDev(qxy, others[0], pivot, others[1]);
-      }
-    }
-    keep.push({ b: cand, cb, sc, ang, qnb });
+    /* 键角偏差: 所有悬挂环系支点处三个键与 120° 的差之和。用户明确要求"角度弄成120度"。 */
+    const ang = _prpCrowdAng(qxy, adj, sysList);
+    keep.push({ b: cand, cb, sc, ang, qnb, bmax });
   }
   if (!keep.length) return blk;
-  /* ★ 字典序:
-   *   交叉分子: 交叉数 → 支点键角偏差 → 总分(用户要 120°, 优先键长更匀)。
-   *   过近分子: 先看交叉(都应为0) → nb 越大越好 → 键角 → 总分。 */
-  if (nearCase) keep.sort((x, y) => (x.cb - y.cb) || (y.qnb - x.qnb) || (x.ang - y.ang) || (x.sc - y.sc));
-  else keep.sort((x, y) => (x.cb - y.cb) || (x.ang - y.ang) || (x.sc - y.sc));
+  /* ★ 字典序(2026-11-27): 交叉数 → 键角是否仍近似 120°(总偏差≤24°) → 最长键比(越短越好看)
+   *   → 角偏差 → 总分。旧版把全局候选的 ang 当 0, 会为了 120° 选中 2.0 倍游丝键。 */
+  const angRank = v => (v.ang <= 24 ? 0 : 1);
+  if (nearCase) keep.sort((x, y) => (x.cb - y.cb) || (angRank(x)-angRank(y)) || (x.bmax-y.bmax) || (y.qnb - x.qnb) || (x.ang - y.ang) || (x.sc - y.sc));
+  else keep.sort((x, y) => (x.cb - y.cb) || (angRank(x)-angRank(y)) || (x.bmax-y.bmax) || (x.ang - y.ang) || (x.sc - y.sc));
   const best = keep[0];
   if (globalThis.__PRP_DBG) console.log('[prp] crowding: cross', c0, '->', best.cb, '| nb', nb0.toFixed(2), '->', best.qnb.toFixed(2), '| ang', best.ang.toFixed(1), '| score', _prpScoreBlk(blk).toFixed(1), '->', best.sc.toFixed(1));
   return best.b;
