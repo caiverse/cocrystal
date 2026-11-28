@@ -161,6 +161,23 @@ def main():
                 if rc != 0:
                     fails.append('渲染闸门未通过（见上），本批不许上传')
 
+    # ---- 新库上线闸门（2026-11-28 起强制）----
+    # 用户要求: 后续新上的库一律统一展示规范(CCDC 文案、卡片隐藏内部断言字段)。
+    # 数据侧由 library_release_check.py 保证: 三处计数/分片索引/CCD 文案/code 唯一;
+    # 展示侧由 app.js 的 EXTRA_LABEL 白名单保证(只显示有信息量的字段)。
+    release = os.path.join(REPO, 'library_release_check.py')
+    if not os.path.exists(release):
+        fails.append('缺少 library_release_check.py，新库上线闸门无法执行')
+    else:
+        print('\n[新库上线闸门] ' + release)
+        try:
+            rc = subprocess.run([sys.executable, release], cwd=REPO).returncode
+        except FileNotFoundError:
+            fails.append('找不到 python，新库上线闸门无法执行（不许绕过）')
+        else:
+            if rc != 0:
+                fails.append('新库上线闸门未通过（见上），本批不许上传')
+
     if fails:
         print('\nPREPUSH AUDIT FAIL:')
         for f in fails: print(' -', f)

@@ -1877,10 +1877,16 @@ function cardHTML(r){
   const ccdc = r.d ? `<div class="ccdc">CCDC：${escapeHTML(r.d)}</div>` : '';
   let extra = '';
   if (r.x && Object.keys(r.x).length){
-    extra = '<div class="extra">' + Object.entries(r.x).map(([k,v])=>{
-      const label = EXTRA_LABEL[k] || k;
-      return `<div class="kv"><span class="k">${escapeHTML(label)}</span><span>${escapeHTML(v)}</span></div>`;
-    }).join('') + '</div>';
+    /* 只渲染有信息量的字段(白名单 = EXTRA_LABEL 的键, 含 inchikey)。
+     * 建库内部断言字段(rings/arom_rings/carbonyls/esters/n_nitrogen/ortho_sub/amine_class
+     * /ester_type/p/rxn/路线/关环位点依据…) 一律不显示 —— 用户要求卡片统一成简洁样式。 */
+    const items = Object.entries(r.x).filter(([k,v]) => (k in EXTRA_LABEL) && v !== '' && v != null);
+    if (items.length){
+      extra = '<div class="extra">' + items.map(([k,v])=>{
+        const label = EXTRA_LABEL[k];
+        return `<div class="kv"><span class="k">${escapeHTML(label)}</span><span>${escapeHTML(v)}</span></div>`;
+      }).join('') + '</div>';
+    }
   }
   const src = `<div class="kv"><span class="k">来源</span><span>${escapeHTML(r.r)}</span></div>`;
   return `<div class="card">

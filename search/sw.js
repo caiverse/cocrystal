@@ -4,7 +4,7 @@
  * 缓存名带 CACHE_VER: 站点结构升级时改这个数字即可整体失效旧缓存。
  */
 'use strict';
-const CACHE_VER = 1;
+const CACHE_VER = 2;   // 2026-11-28: 33 个分片 d 字段统一, 旧缓存必须整体失效
 const CACHE_NAME = 'cocrystal-shards-v' + CACHE_VER;
 const DATA_RE = /\/data\/(products\.\d+\.json|fp\.\d+\.bin)$/;
 
