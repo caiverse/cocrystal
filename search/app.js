@@ -1515,7 +1515,9 @@ function _prpFixLabelGap(blk){
   const ops = [];
   const rot = (q, atoms, centerIdx, deg, shift) => {
     const th = deg * Math.PI/180, ca = Math.cos(th), sa = Math.sin(th);
-    const px = xy[centerIdx][0], py = xy[centerIdx][1];
+    /* 必须用 q 的当前支点: 两个嵌套环系连续旋转时, 第二个环系的 ipso 已被第一个旋转搬走,
+     *   绕原始 xy 支点转会把键长/几何弄歪, 也搜不到"母核不动、只摆苯环"的平正解。 */
+    const px = q[centerIdx][0], py = q[centerIdx][1];
     for (const a of atoms){
       const vx = q[a][0]-px, vy = q[a][1]-py;
       q[a] = [px+ca*vx-sa*vy + (shift ? shift[0] : 0), py+sa*vx+ca*vy + (shift ? shift[1] : 0)];
@@ -1582,6 +1584,36 @@ function _prpFixLabelGap(blk){
   /* 末端卤素/氧原子单独绕挂点扭转: Br/I 挂在与冲突键相邻的环碳上, 或 CF3 里的 F 互相
    *   贴住时, 整个基团刚性旋转不会改变内部相对位置, 只有把那一个端基自己转开才有解。 */
   const symOf = k => ((P.atomLines[k]||'').trim().split(/\s+/)[3] || '');
+  /* ★ 2026-11-28 用户反馈「歪歪扭扭，主体结构平正一点」: 旧版只按总分选坐标, 会为了
+   *   0.01 分的微弱优势把整个母核环转 60°。这里给每个候选记"主体环位移":
+   *   中心性最高的环(环原子度数 + 杂原子加权最大的那个)位移必须优先小, 其次所有环的总位移。
+   *   这样只转悬挂苯环/端基就能达标时, 绝不会去动母核。 */
+  const allRings = [];
+  for (const t of [5,6,7]){
+    let rs; try { rs = _prpFindRings(adj, nA, t); } catch(e){ rs = []; }
+    for (const r of rs) allRings.push(r);
+  }
+  let coreRing = null, coreScore = -1;
+  for (const r of allRings){
+    let sc = 0;
+    for (const a of r){ sc += adj[a].length; const s = symOf(a); if (s && s !== 'C' && s !== 'H') sc += 3; }
+    if (sc > coreScore){ coreScore = sc; coreRing = r; }
+  }
+  if (globalThis.__PRP_DBG) console.log('[prp] core ring', coreRing, 'score', coreScore);
+  const ringAtomsAll = new Set();
+  for (const r of allRings) for (const a of r) ringAtomsAll.add(a);
+  const shapeOf = q => {
+    let core = 0, ring = 0;
+    if (coreRing) for (const a of coreRing){
+      const d = Math.hypot(q[a][0]-xy[a][0], q[a][1]-xy[a][1]) / med;
+      if (d > core) core = d;
+    }
+    for (const a of ringAtomsAll){
+      const d = Math.hypot(q[a][0]-xy[a][0], q[a][1]-xy[a][1]) / med;
+      if (d > ring) ring = d;
+    }
+    return [core <= 0.02 ? 0 : (core <= 0.10 ? 1 : (core <= 0.30 ? 2 : 3)), +ring.toFixed(2)];
+  };
   for (let i = 0; i < nA; i++){
     const s = symOf(i);
     if (s === 'C' || s === 'H' || !s || adj[i].length !== 1) continue;
@@ -1613,18 +1645,21 @@ function _prpFixLabelGap(blk){
     if (!(sc <= 600)) continue;
     if (dbg) dbg.score++;
     const ang = _prpCrowdAng(q, adj, sysList);
-    /* 先总分(已含净空罚), 再支点角偏差, 再净空, 再最长键: 全 0 分的候选里选最贴 120° 的。 */
-    const key = [sc, ang, -g, ratios.max];
-    if (!bestKey || key[0] < bestKey[0]-1e-6 ||
-        (Math.abs(key[0]-bestKey[0]) < 1e-6 && (key[1] < bestKey[1]-1e-6 ||
-        (Math.abs(key[1]-bestKey[1]) < 1e-6 && (key[2] < bestKey[2]-1e-6 ||
-        (Math.abs(key[2]-bestKey[2]) < 1e-6 && key[3] < bestKey[3])))))){
-      best = cand; bestKey = key;
+    const [coreRank, ringShift] = shapeOf(q);
+    /* 字典序: 主体环是否原位 → 全体环位移 → 总分(已含净空罚) → 支点角 → 净空 → 最长键。
+     * 「主体平正」优先于零点几分的总分差 — 用户 2026-11-28 明确反馈歪斜比分数难看。 */
+    const key = [coreRank, ringShift, sc, ang, -g, ratios.max];
+    const tol = [0, 0.02, 1e-6, 1e-6, 1e-6, 1e-6];
+    let take = !bestKey;
+    if (!take) for (let k = 0; k < key.length; k++){
+      if (key[k] < bestKey[k] - tol[k]){ take = true; break; }
+      if (key[k] > bestKey[k] + tol[k]) break;
     }
+    if (take){ best = cand; bestKey = key; }
   }
   if (dbg)
-    console.log('[prp] label gap', info.gap.toFixed(3), '->', best ? (-bestKey[2]).toFixed(3) : 'NO FIX',
-      '| 候选', JSON.stringify(dbg));
+    console.log('[prp] label gap', info.gap.toFixed(3), '->', best ? (-bestKey[4]).toFixed(3) : 'NO FIX',
+      '| key', best && bestKey, '| 候选', JSON.stringify(dbg));
   return best || blk;
 }
 
