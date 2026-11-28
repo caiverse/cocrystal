@@ -1,6 +1,6 @@
 {
-  "total": 2399840,
-  "with_smiles": 2399840,
+  "total": 2401569,
+  "with_smiles": 2401569,
   "without_smiles": 0,
   "smiles_invalid_dropped": 0,
   "coverage_pct": 100.0,
@@ -159,7 +159,10 @@
     "TZP-2-氨基噻唑噻唑并嘧啶",
     "TDZ-2-氨基噻二唑噻二唑并嘧啶",
     "TRZ-3-氨基三氮唑三氮唑并嘧啶",
-    "BZT-2-氨基苯并噻唑嘧啶并苯并噻唑"
+    "BZT-2-氨基苯并噻唑嘧啶并苯并噻唑",
+    "TP2-2-乙酰基吡啶-2,2':6',2''-三联吡啶",
+    "TP3-3-乙酰基吡啶-2,6-二(吡啶-3-基)吡啶",
+    "TP4-4-乙酰基吡啶-2,6-二(吡啶-4-基)吡啶"
   ],
   "by_category": {
     "席夫碱": 75047,
@@ -317,7 +320,10 @@
     "TZP-2-氨基噻唑噻唑并嘧啶": 30150,
     "TDZ-2-氨基噻二唑噻二唑并嘧啶": 30150,
     "TRZ-3-氨基三氮唑三氮唑并嘧啶": 30145,
-    "BZT-2-氨基苯并噻唑嘧啶并苯并噻唑": 30132
+    "BZT-2-氨基苯并噻唑嘧啶并苯并噻唑": 30132,
+    "TP2-2-乙酰基吡啶-2,2':6',2''-三联吡啶": 545,
+    "TP3-3-乙酰基吡啶-2,6-二(吡啶-3-基)吡啶": 601,
+    "TP4-4-乙酰基吡啶-2,6-二(吡啶-4-基)吡啶": 583
   },
   "by_library": {
     "席夫碱产物库_胺醛对应产物表_2026-10-29.csv": 75047,
@@ -442,8 +448,11 @@
     "thiazolopyrimidine_products_cleaned.csv": 30150,
     "thiadiazolopyrimidine_products_cleaned.csv": 30150,
     "triazolopyrimidine_products_cleaned.csv": 30145,
-    "pyrimidobenzothiazole_products_cleaned.csv": 30132
+    "pyrimidobenzothiazole_products_cleaned.csv": 30132,
+    "terpyridine_TP2_products_cleaned.csv": 545,
+    "terpyridine_TP3_products_cleaned.csv": 601,
+    "terpyridine_TP4_products_cleaned.csv": 583
   },
-  "n_product": 156,
+  "n_product": 159,
   "n_reagent": 4
 }
