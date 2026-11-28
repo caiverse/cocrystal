@@ -277,12 +277,53 @@ function _prpScoreBlk(blk){
     }
   }
   const overPen = (minNB < 1e9) ? Math.max(0, 0.5 - minNB/med) / 0.1 : 0;
+  /* ⑤ 标签压线(2026-11-28): 原子-原子距离达标 ≠ 画得清楚。带字母的端基原子(O/N/S/Cl…)
+   *   字形有宽度, 到"非键合键线段"的净空必须更大。实测 2,6-二甲基-4-联苯 DHP 的
+   *   羰基 O 到邻苯环边线仅 0.358×中位键长(原子距 0.519 看似达标), 红字直接压在黑线上。
+   *   每 0.1 键长不足罚 30 分 —— 压过键长小偏差, 让 A/E 双坐标择优自动换坐标。 */
+  let labelPen = 0;
+  if (nA <= 110){
+    const bl = _prpBondsOf(P.bondLines, nA);
+    const bonded = new Set();
+    adj.forEach((lst, i) => { for (const j of lst) bonded.add(i < j ? i+'-'+j : j+'-'+i); });
+    for (let i = 0; i < nA; i++){
+      const s = ((P.atomLines[i]||'').trim().split(/\s+/)[3] || '');
+      if (s === 'C' || s === 'H' || !s) continue;      // 碳原子无字母标签
+      for (const [a, b] of bl){
+        if (a === i || b === i) continue;
+        if (bonded.has(i+'-'+a) || bonded.has(i+'-'+b)) continue;  // 跳过与自身相连的键
+        const gap = _prpPtSegDist(xy[i], xy[a], xy[b]) / med;
+        if (gap < 0.70) labelPen += (0.70 - gap) / 0.1;
+      }
+    }
+    labelPen *= 30;
+  }
   let crossPen = 0;
   if (nA <= 110){
     const bl = _prpBondsOf(P.bondLines, nA);
     if (bl.length > 2) crossPen = 80 * _prpCrossCount(xy, bl);
   }
-  return 100*bondPen + 2*angMean + 20*overPen + crossPen;
+  return 100*bondPen + 2*angMean + 20*overPen + crossPen + labelPen;
+}
+/* 带字母标签的原子(O/N/S/卤素…)到**非键合键线段**的最近净空(单位: 中位键长)。
+ * 与 _prpScoreBlk 的 labelPen 同一口径, 但只取最差的一处并额外带回原子/键编号,
+ * 供 _prpFixLabelGap 定向生成候选、供上线闸门量化"标签压线"这种常规指标抓不到的硬伤。 */
+function _prpLabelGapInfo(P, xy, med, adj, bl){
+  const bonded = new Set();
+  adj.forEach((lst,i) => { for (const j of lst) bonded.add(i<j ? i+'-'+j : j+'-'+i); });
+  const worst = { gap: 1e9, atom: -1, sym: '', bond: null };
+  if (!(med > 0.2)) return worst;
+  for (let i = 0; i < P.nAtoms; i++){
+    const s = ((P.atomLines[i]||'').trim().split(/\s+/)[3] || '');
+    if (s === 'C' || s === 'H' || !s) continue;
+    for (const [a, b] of bl){
+      if (a === i || b === i) continue;
+      if (bonded.has(i+'-'+a) || bonded.has(i+'-'+b)) continue;
+      const gap = _prpPtSegDist(xy[i], xy[a], xy[b]) / med;
+      if (gap < worst.gap){ worst.gap = gap; worst.atom = i; worst.sym = s; worst.bond = [a, b]; }
+    }
+  }
+  return worst;
 }
 /* 候选 C: 键长松弛 —— 把**非环键**的长度拉向中位值(两端各让一半), 环内键一律不动。
  * 用途: 两种坐标生成器都会偶尔留下"非端基键偏长/偏短"(如 coordgen 把某根 C-C 拉到 2.5 倍),
@@ -1436,6 +1477,157 @@ function _prpFixCrowding(blk){
   return best.b;
 }
 
+/* ★ 2026-11-28: 标签压线修复。常规指标(交叉/键长/原子间距/环角)全过时, 带字母的端基
+ *   原子仍可能把字形压在邻环键线上 —— 实测 2,6-二甲基-4-联苯 DHP 的羰基 O 净空只有
+ *   0.358×中位键长, 肉眼就是"遮挡严重"。纯靠 A/E 打分选坐标修不了: 两套坐标一套键长
+ *   完美但压线, 另一套净空 0.699 却有 2.53 倍游丝键。
+ *   做法: 只在净空 < 0.70 时启用, 把涉及冲突键的悬挂环系与其它环系成对做小角度旋转
+ *   (绕 ipso 或支点), 逐候选复核净空/交叉/非键距离/键长/环角, 全部达标才换坐标。
+ *   绝大多数分子净空 >= 0.70, 在这里零成本原样返回, 故不会动到历史渲染结果。 */
+const LABEL_GAP_MIN = 0.68;   // 目标 0.70; 留 0.02 浮点余量, 否则 0.6999 会被误判不合格
+function _prpFixLabelGap(blk){
+  if (!blk) return blk;
+  let P; try { P = _prpParseV2000(blk); } catch(e){ return blk; }
+  const nA = P.nAtoms | 0;
+  if (!(nA > 3)) return blk;
+  const xy = _prpXYOf(P);
+  if (!xy) return blk;
+  const bonds = _prpBondsOf(P.bondLines, nA);
+  if (bonds.length < 3) return blk;
+  const ds = bonds.map(([a,b]) => Math.hypot(xy[a][0]-xy[b][0], xy[a][1]-xy[b][1]));
+  const med = ds.slice().sort((p,q)=>p-q)[(ds.length/2)|0];
+  if (!(med > 0.2)) return blk;
+  const adj = _prpBuildAdj(P.bondLines, nA);
+  const info = _prpLabelGapInfo(P, xy, med, adj, bonds);
+  if (info.gap >= LABEL_GAP_MIN || !info.bond) return blk;
+  let sysList = [];
+  try { sysList = _prpPendantSystems(adj, nA); } catch(e){ sysList = []; }
+  /* 无环系时后面仍可用"非环端基旋转"修复, 不能在这里提前返回。 */
+  const infos = sysList.map(s => {
+    const piv = adj[s.ipso].find(a => !s.S.has(a));
+    return { S: s.S, ipso: s.ipso, piv };
+  }).filter(d => d.piv !== undefined);
+  if (!infos.length) return blk;
+  /* 冲突键落在哪个环系上, 就只把它作为焦点与其他环系配对; 找不到焦点时退化为全体配对。 */
+  const focus = new Set();
+  for (const a of info.bond) for (let i = 0; i < infos.length; i++) if (infos[i].S.has(a)) focus.add(i);
+  if (!focus.size) for (let i = 0; i < infos.length; i++) focus.add(i);
+  const ops = [];
+  const rot = (q, atoms, centerIdx, deg, shift) => {
+    const th = deg * Math.PI/180, ca = Math.cos(th), sa = Math.sin(th);
+    const px = xy[centerIdx][0], py = xy[centerIdx][1];
+    for (const a of atoms){
+      const vx = q[a][0]-px, vy = q[a][1]-py;
+      q[a] = [px+ca*vx-sa*vy + (shift ? shift[0] : 0), py+sa*vx+ca*vy + (shift ? shift[1] : 0)];
+    }
+  };
+  const angles = [-90,-60,-45,-30,-20,-10,-5,5,10,20,30,45,60,90];
+  const centers = ['ipso','piv'];
+  const sysOpt = (i, center, deg) => ({
+    atoms: infos[i].S, center: center === 'ipso' ? infos[i].ipso : infos[i].piv, deg
+  });
+  /* 单环系旋转 */
+  for (let i = 0; i < infos.length; i++) for (const center of centers) for (const deg of angles)
+    ops.push([sysOpt(i, center, deg)]);
+  /* 焦点环系 × 其他环系; 环系多时只取与标签原子最近的 4 个, 防组合爆炸。 */
+  const others = infos.map((_,i)=>i).filter(i=>!focus.has(i))
+    .sort((x,y)=>{
+      const dx = Math.min(...[...infos[x].S].map(a=>Math.hypot(xy[a][0]-xy[info.atom][0],xy[a][1]-xy[info.atom][1])));
+      const dy = Math.min(...[...infos[y].S].map(a=>Math.hypot(xy[a][0]-xy[info.atom][0],xy[a][1]-xy[info.atom][1])));
+      return dx-dy;
+    }).slice(0,4);
+  for (const i of focus) for (const j of others) for (const c1 of centers) for (const c2 of centers) for (const d1 of angles) for (const d2 of angles)
+    ops.push([sysOpt(i,c1,d1), sysOpt(j,c2,d2)]);
+  /* 旋转 + 沿挂键外推: 纯旋转对某些对称取代基无解, 小幅外推能把整个基团挪离键线。 */
+  for (const d of infos){
+    const ux = xy[d.ipso][0]-xy[d.piv][0], uy = xy[d.ipso][1]-xy[d.piv][1];
+    const ul = Math.hypot(ux, uy);
+    if (!(ul > 1e-6)) continue;
+    for (const deg of angles) for (const k of [0.2,0.4,0.6,1.0]){
+      const sh = [ux/ul*med*k, uy/ul*med*k];
+      ops.push([{ atoms: d.S, center: d.ipso, deg, shift: sh }]);
+    }
+  }
+  /* ★ 非环端基旋转: 磺酸/酯/叔丁基等不在任何环系里, 环系旋转救不了它们。
+   *   把"只通过一根键挂在环上的整个取代基"绕挂点(或取代基第一 atom)刚性旋转。 */
+  const ringAtoms = new Set();
+  for (const t of [5,6,7]){
+    let rs; try { rs = _prpFindRings(adj, nA, t); } catch(e){ rs = []; }
+    for (const r of rs) for (const a of r) ringAtoms.add(a);
+  }
+  const seen = new Set();
+  for (let i = 0; i < nA; i++){
+    if (ringAtoms.has(i) || seen.has(i)) continue;
+    const comp = [], stack = [i]; seen.add(i);
+    while (stack.length){
+      const v = stack.pop(); comp.push(v);
+      for (const w of adj[v]) if (!ringAtoms.has(w) && !seen.has(w)){ seen.add(w); stack.push(w); }
+    }
+    const attach = new Set();
+    for (const a of comp) for (const w of adj[a]) if (ringAtoms.has(w)) attach.add(w);
+    if (attach.size !== 1) continue;
+    const anchor = [...attach][0];
+    const first = adj[anchor].find(a => comp.indexOf(a) >= 0);
+    for (const c of [anchor, first].filter(a => a !== undefined)) for (const deg of angles)
+      ops.push([{ atoms: new Set(comp), center: c, deg }]);
+    if (first !== undefined){
+      const ux = xy[first][0]-xy[anchor][0], uy = xy[first][1]-xy[anchor][1];
+      const ul = Math.hypot(ux, uy);
+      if (ul > 1e-6) for (const deg of angles) for (const k of [0.2,0.4,0.6,1.0]){
+        const sh = [ux/ul*med*k, uy/ul*med*k];
+        ops.push([{ atoms: new Set(comp), center: first, deg, shift: sh }]);
+      }
+    }
+  }
+  /* 末端卤素/氧原子单独绕挂点扭转: Br/I 挂在与冲突键相邻的环碳上, 或 CF3 里的 F 互相
+   *   贴住时, 整个基团刚性旋转不会改变内部相对位置, 只有把那一个端基自己转开才有解。 */
+  const symOf = k => ((P.atomLines[k]||'').trim().split(/\s+/)[3] || '');
+  for (let i = 0; i < nA; i++){
+    const s = symOf(i);
+    if (s === 'C' || s === 'H' || !s || adj[i].length !== 1) continue;
+    for (const deg of angles) ops.push([{ atoms: new Set([i]), center: adj[i][0], deg }]);
+  }
+  if (!ops.length) return blk;
+  let best = null, bestKey = null;
+  const dbg = globalThis.__PRP_DBG ? { ops: ops.length, maxGap: 0, gap: 0, cross: 0, nb: 0, ratio: 0, ring: 0, score: 0 } : null;
+  for (const op of ops){
+    const q = xy.map(p => [p[0], p[1]]);
+    for (const { atoms, center, deg, shift } of op) rot(q, atoms, center, deg, shift);
+    /* ★ 先在坐标层做净空预筛: 绝大多数候选一眼不合格, 不必构造/解析 molblock。
+     *   2026-11-28 实测不预筛时每张缺陷分子要多花近 1 秒, 会拖慢卡片首屏。 */
+    const g = _prpLabelGapInfo(P, q, med, adj, bonds).gap;
+    if (dbg && g > dbg.maxGap) dbg.maxGap = +g.toFixed(3);
+    if (g < LABEL_GAP_MIN) continue;
+    if (dbg) dbg.gap++;
+    if (_prpCrossCount(q, bonds) > 0) continue;
+    if (dbg) dbg.cross++;
+    if (_prpMinNB(q, bonds, nA) < 0.40) continue;
+    if (dbg) dbg.nb++;
+    const cand = _prpSetXY(blk, q);
+    const ratios = _prpBondRatios(cand);
+    if (ratios.max > 2.59 || ratios.min < 0.70) continue;
+    if (dbg) dbg.ratio++;
+    if (_prpRingAngOf(cand) > 8.0) continue;
+    if (dbg) dbg.ring++;
+    let sc; try { sc = _prpScoreBlk(cand); } catch(e){ continue; }
+    if (!(sc <= 600)) continue;
+    if (dbg) dbg.score++;
+    const ang = _prpCrowdAng(q, adj, sysList);
+    /* 先总分(已含净空罚), 再支点角偏差, 再净空, 再最长键: 全 0 分的候选里选最贴 120° 的。 */
+    const key = [sc, ang, -g, ratios.max];
+    if (!bestKey || key[0] < bestKey[0]-1e-6 ||
+        (Math.abs(key[0]-bestKey[0]) < 1e-6 && (key[1] < bestKey[1]-1e-6 ||
+        (Math.abs(key[1]-bestKey[1]) < 1e-6 && (key[2] < bestKey[2]-1e-6 ||
+        (Math.abs(key[2]-bestKey[2]) < 1e-6 && key[3] < bestKey[3])))))){
+      best = cand; bestKey = key;
+    }
+  }
+  if (dbg)
+    console.log('[prp] label gap', info.gap.toFixed(3), '->', best ? (-bestKey[2]).toFixed(3) : 'NO FIX',
+      '| 候选', JSON.stringify(dbg));
+  return best || blk;
+}
+
 /* ---------- 结构式绘制 ---------- */
 const _SVG_CACHE = new Map();
 /* W/H 默认 250×195(检索站卡片); 首页侧栏静态图要求 300×240, 由生成脚本传入。 */
@@ -1505,6 +1697,8 @@ function molToSVG(smiles, _w, _h){
       }
       /* 仍有键线交叉/原子过近时, 追加"悬挂环系翻面/外推"候选(2026-11-26)。 */
       if (blk){ try { blk = _prpFixCrowding(blk); } catch(e){} }
+      /* 常规指标全过但带字母端基压在邻环键线上时, 追加"环系小角度旋转"候选(2026-11-28)。 */
+      if (blk){ try { blk = _prpFixLabelGap(blk); } catch(e){} }
       // 调试/审计钩子: 让离线审计脚本能拿到"这一张图实际用的坐标"(浏览器控制台也可查)
       if (blk) globalThis.__PRP_LASTBLK = blk;
       // 关键修正(2026-11-05, C=N 交叉双键): RDKit 写 molblock 时会把"未指定 E/Z 的双键"

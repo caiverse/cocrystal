@@ -18,7 +18,9 @@
  *   ② 键长比 0.70–2.60        逐键 d/中位; 1.65~2.60 记 WARN(拥挤分子外推取舍), >2.60 FAIL
  *   ③ 非键最近距离 ≥ 0.40×中位 原子叠在一起
  *   ④ 环内角平均偏差 ≤ 8°      5/6/7 元环相对 108/120/128.57
- *   ⑤ SVG 必须非空且含键路径
+ *   ⑤ 标签净空 ≥ 0.50×中位键长  带字母端基原子(O/N/卤素…)到非键合键线段
+ *      (渲染器自己尽量修到 ≥0.68, 闸门只拦肉眼可见的 <0.50)
+ *   ⑥ SVG 必须非空且含键路径
  *   → 任一片抽样里出现 1 条不合格或交叉即 FAIL, 列出 code 逐条修; 不再按缺陷率放行。
  */
 'use strict';
@@ -35,6 +37,7 @@ const THRESH = {
   bondMax: 2.60,     // 硬上限: 超过就是"断线/游丝"级缺陷
   bondWarn: 1.65,    // 1.65~2.60 记 WARN: 拥挤分子"推远片断"必然拉长系链键, 属可接受的取舍
   minNB: 0.40,       // × 中位键长
+  labelGap: 0.50,    // 带字母标签原子到非键合键线段的净空(渲染器把可见遮挡尽量修到 0.70, 闸门拦 <0.50)
   ringAngMean: 8.0,  // 度
   /* ★ 零容忍(2026-11-26 用户要求"全部挨个更正"): 不合格数、交叉数都必须精确为 0,
    *   不再用比例阈值放行。WARN(长键 1.65~2.6, 拥挤分子外推的合法取舍)仍不计入不合格。 */
@@ -44,10 +47,11 @@ function parseBlk(blk){
   const L = blk.split('\n');
   const c = (L[3] || '').trim().split(/\s+/).map(Number);
   const nA = c[0] | 0, nB = c[1] | 0;
-  const xy = [];
+  const xy = [], symbols = [];
   for (let i = 0; i < nA; i++){
     const t = (L[4+i] || '').trim().split(/\s+/);
     xy.push([+t[0], +t[1]]);
+    symbols.push(t[3] || '');
   }
   const bonds = [];
   for (let i = 0; i < nB; i++){
@@ -55,12 +59,21 @@ function parseBlk(blk){
     const a = parseInt(s.slice(0,3), 10) - 1, b = parseInt(s.slice(3,6), 10) - 1;
     if (a >= 0 && a < nA && b >= 0 && b < nA && a !== b) bonds.push([a, b]);
   }
-  return { nA, xy, bonds };
+  return { nA, xy, bonds, symbols };
 }
 function segCross(p1, p2, p3, p4){
   const d = (a, b, c) => (b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0]);
   const d1 = d(p3,p4,p1), d2 = d(p3,p4,p2), d3 = d(p1,p2,p3), d4 = d(p1,p2,p4);
   return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+function ptSegDist(p, a, b){
+  const vx=b[0]-a[0], vy=b[1]-a[1], wx=p[0]-a[0], wy=p[1]-a[1];
+  const c1=vx*wx+vy*wy;
+  if(c1<=0) return Math.hypot(p[0]-a[0],p[1]-a[1]);
+  const c2=vx*vx+vy*vy;
+  if(c2<=c1) return Math.hypot(p[0]-b[0],p[1]-b[1]);
+  const t=c1/c2;
+  return Math.hypot(p[0]-(a[0]+t*vx),p[1]-(a[1]+t*vy));
 }
 function findRings(adj, n, t){
   const out = [], seen = new Set();
@@ -84,8 +97,8 @@ function findRings(adj, n, t){
 /* 度量: 全部基于"实际用于出图的那份坐标" */
 function measure(blk, svg){
   const P = parseBlk(blk);
-  const { nA, xy, bonds } = P;
-  const m = { nA, nB: bonds.length, cross: 0, bondMin: 1, bondMax: 1, minNB: 9, ringAng: 0, svgOK: 0 };
+  const { nA, xy, bonds, symbols } = P;
+  const m = { nA, nB: bonds.length, cross: 0, bondMin: 1, bondMax: 1, minNB: 9, labelGap: 9, ringAng: 0, svgOK: 0 };
   m.svgOK = (svg && svg.indexOf('bond-') >= 0) ? 1 : 0;
   if (!bonds.length) return m;
   const ds = bonds.map(([a,b]) => Math.hypot(xy[a][0]-xy[b][0], xy[a][1]-xy[b][1]));
@@ -109,6 +122,17 @@ function measure(blk, svg){
     if (bonded.has(i+'-'+j)) continue;
     const d = Math.hypot(xy[i][0]-xy[j][0], xy[i][1]-xy[j][1]) / med;
     if (d < m.minNB) m.minNB = d;
+  }
+  // 标签压线: 带字母的端基原子字形有宽度, 到非键合键线段的净空必须更大
+  for (let i = 0; i < nA; i++){
+    const s = symbols[i] || '';
+    if (s === 'C' || s === 'H' || !s) continue;
+    for (const [a, b] of bonds){
+      if (a === i || b === i) continue;
+      if (bonded.has(i+'-'+a) || bonded.has(i+'-'+b)) continue;
+      const g = ptSegDist(xy[i], xy[a], xy[b]) / med;
+      if (g < m.labelGap) m.labelGap = g;
+    }
   }
   // 环内角
   const adj = Array.from({length: nA}, () => []);
@@ -139,6 +163,7 @@ function failReasons(m){
   if (m.bondMin < THRESH.bondMin) r.push('短键' + m.bondMin.toFixed(2));
   if (m.bondMax > THRESH.bondMax) r.push('长键' + m.bondMax.toFixed(2));
   if (m.minNB < THRESH.minNB) r.push('原子过近' + m.minNB.toFixed(2));
+  if (m.labelGap < THRESH.labelGap) r.push('标签压线' + m.labelGap.toFixed(2));
   if (m.ringAng > THRESH.ringAngMean) r.push('环角' + m.ringAng.toFixed(1) + '°');
   return r;
 }
@@ -195,7 +220,7 @@ init({ locateFile: f => path.join(SEARCH, 'lib/rdkit', f) }).then(mod => {
     const arr = JSON.parse(fs.readFileSync(p, 'utf8'));
     const step = FULL ? 1 : Math.max(1, Math.ceil(arr.length / SAMPLE));
     let n = 0, fail = 0;
-    const agg = { cross: 0, bondMin: 1, bondMax: 1, minNB: 9, ringAng: 0, warn: 0 };
+    const agg = { cross: 0, bondMin: 1, bondMax: 1, minNB: 9, labelGap: 9, ringAng: 0, warn: 0 };
     for (let i = 0; i < arr.length; i += step){
       const it = arr[i];
       if (!it || !it.s){ continue; }
@@ -209,6 +234,7 @@ init({ locateFile: f => path.join(SEARCH, 'lib/rdkit', f) }).then(mod => {
       if (m.bondMin < agg.bondMin) agg.bondMin = m.bondMin;
       if (m.bondMax > agg.bondMax) agg.bondMax = m.bondMax;
       if (m.minNB < agg.minNB) agg.minNB = m.minNB;
+      if (m.labelGap < agg.labelGap) agg.labelGap = m.labelGap;
       if (m.ringAng > agg.ringAng) agg.ringAng = m.ringAng;
       const rs = failReasons(m);
       if (rs.length){ fail++; if (bad.length < 40) bad.push({ sh, code: it.code, why: rs, s: it.s }); }
@@ -220,17 +246,17 @@ init({ locateFile: f => path.join(SEARCH, 'lib/rdkit', f) }).then(mod => {
 
   if (CAL){
     console.log('\n===== 指标极值(本批样本, 用于定阈值) =====');
-    console.log('分片   渲染数  最差键长比  非键最近  环角偏差  交叉合计');
+    console.log('分片   渲染数  最差键长比  非键最近  标签净空  环角偏差  交叉合计');
     for (const r of rows){
       console.log(String(r.sh).padEnd(6), String(r.n).padStart(6), '   ',
         r.bondMin.toFixed(3) + '/' + r.bondMax.toFixed(3), '  ',
-        r.minNB.toFixed(3), '  ', r.ringAng.toFixed(2) + '°', '  ', r.cross);
+        r.minNB.toFixed(3), '  ', r.labelGap.toFixed(3), '  ', r.ringAng.toFixed(2) + '°', '  ', r.cross);
     }
     process.exit(0);
   }
 
   console.log('\n===== 渲染闸门 (' + (FULL ? '全量' : '抽样 ' + SAMPLE + '/片') + ', app.js=' + path.basename(APPJS) + ') =====');
-  console.log('分片   渲染数   不合格   警告   交叉   最差键长比    非键最近   环角偏差');
+  console.log('分片   渲染数   不合格   警告   交叉   最差键长比    非键最近   标签净空   环角偏差');
   for (const r of rows){
     console.log(
       String(r.sh).padEnd(6),
@@ -240,6 +266,7 @@ init({ locateFile: f => path.join(SEARCH, 'lib/rdkit', f) }).then(mod => {
       String(r.cross).padStart(6),
       (r.bondMin.toFixed(2) + '~' + r.bondMax.toFixed(2)).padStart(12),
       r.minNB.toFixed(2).padStart(10),
+      r.labelGap.toFixed(2).padStart(10),
       (r.ringAng.toFixed(1) + '°').padStart(9)
     );
   }
@@ -249,7 +276,7 @@ init({ locateFile: f => path.join(SEARCH, 'lib/rdkit', f) }).then(mod => {
   }
   console.log('\n合计: 渲染 ' + totN + ' 条, 不合格 ' + totR + ' 条 (' + (totN ? (100*totR/totN).toFixed(2) : '0') + '%)');
   console.log('阈值: 交叉=' + THRESH.cross + ' 键长 ' + THRESH.bondMin + '~' + THRESH.bondMax
-    + ' 非键最近≥' + THRESH.minNB + ' 环角≤' + THRESH.ringAngMean + '°'
+    + ' 非键最近≥' + THRESH.minNB + ' 标签净空≥' + THRESH.labelGap + ' 环角≤' + THRESH.ringAngMean + '°'
     + ' 长键 WARN>' + THRESH.bondWarn + ' FAIL>' + THRESH.bondMax);
   const crossAll = rows.reduce((a, r) => a + r.cross, 0);
   /* ★ 2026-11-26 用户明确要求「全部挨个更正，打分不过关不要上传」→ 零容忍:
