@@ -1499,13 +1499,14 @@ function _prpFixLabelGap(blk){
   if (!(med > 0.2)) return blk;
   const adj = _prpBuildAdj(P.bondLines, nA);
   const info = _prpLabelGapInfo(P, xy, med, adj, bonds);
+  globalThis.__PRP_LAST_FIXINFO = { gap: +info.gap.toFixed(3), fixed: false };
   if (info.gap >= LABEL_GAP_MIN || !info.bond) return blk;
   let sysList = [];
   try { sysList = _prpPendantSystems(adj, nA); } catch(e){ sysList = []; }
   /* 无环系时后面仍可用"非环端基旋转"修复, 不能在这里提前返回。 */
   const infos = sysList.map(s => {
     const piv = adj[s.ipso].find(a => !s.S.has(a));
-    return { S: s.S, ipso: s.ipso, piv };
+    return { S: s.S, ipso: s.ipso, piv, ring: s.ring };
   }).filter(d => d.piv !== undefined);
   if (!infos.length) return blk;
   /* 冲突键落在哪个环系上, 就只把它作为焦点与其他环系配对; 找不到焦点时退化为全体配对。 */
@@ -1525,6 +1526,29 @@ function _prpFixLabelGap(blk){
   };
   const angles = [-90,-60,-45,-30,-20,-10,-5,5,10,20,30,45,60,90];
   const centers = ['ipso','piv'];
+  /* 标准画法: 悬挂环系的挂键应落在支点两条环键的角平分线上(等价 120°)。
+   * 先把每个环系"精确对齐"的旋转角算出来, 作为候选; 离散角度表容易差 5°~10°。 */
+  const idealDeg = d => {
+    if (!d.ring || d.ring.size < 5) return null;
+    const others = adj[d.piv].filter(a => a !== d.ipso);
+    if (others.length !== 2) return null;
+    const u1 = [xy[others[0]][0]-xy[d.piv][0], xy[others[0]][1]-xy[d.piv][1]];
+    const u2 = [xy[others[1]][0]-xy[d.piv][0], xy[others[1]][1]-xy[d.piv][1]];
+    const l1 = Math.hypot(u1[0],u1[1]), l2 = Math.hypot(u2[0],u2[1]);
+    if (!(l1 > 1e-6 && l2 > 1e-6)) return null;
+    const ideal = Math.atan2(-(u1[1]/l1+u2[1]/l2), -(u1[0]/l1+u2[0]/l2));
+    const cur = Math.atan2(xy[d.ipso][1]-xy[d.piv][1], xy[d.ipso][0]-xy[d.piv][0]);
+    let delta = (ideal - cur) * 180 / Math.PI;
+    while (delta > 180) delta -= 360;
+    while (delta < -180) delta += 360;
+    return delta;
+  };
+  const ideals = infos.map(d => ({ d, deg: idealDeg(d) })).filter(x => x.deg !== null && Math.abs(x.deg) > 1e-6);
+  for (const { d, deg } of ideals)
+    ops.push([{ atoms: d.S, center: d.piv, deg }]);
+  for (let i = 0; i < ideals.length; i++) for (let j = i+1; j < ideals.length; j++)
+    ops.push([{ atoms: ideals[i].d.S, center: ideals[i].d.piv, deg: ideals[i].deg },
+              { atoms: ideals[j].d.S, center: ideals[j].d.piv, deg: ideals[j].deg }]);
   const sysOpt = (i, center, deg) => ({
     atoms: infos[i].S, center: center === 'ipso' ? infos[i].ipso : infos[i].piv, deg
   });
@@ -1548,6 +1572,12 @@ function _prpFixLabelGap(blk){
     for (const deg of angles) for (const k of [0.2,0.4,0.6,1.0]){
       const sh = [ux/ul*med*k, uy/ul*med*k];
       ops.push([{ atoms: d.S, center: d.ipso, deg, shift: sh }]);
+    }
+    /* 纯拉长(不旋转): 用户 2026-11-28 规则「拥挤的官能团拉长键来处理」——
+     *   方向已经端正时, 宁可把挂键拉长, 也不要再转环。 */
+    for (let k = 0.1; k <= 1.6; k += 0.1){
+      const sh = [ux/ul*med*k, uy/ul*med*k];
+      ops.push([{ atoms: d.S, center: d.ipso, deg: 0, shift: sh }]);
     }
   }
   /* ★ 非环端基旋转: 磺酸/酯/叔丁基等不在任何环系里, 环系旋转救不了它们。
@@ -1599,7 +1629,8 @@ function _prpFixLabelGap(blk){
     for (const a of r){ sc += adj[a].length; const s = symOf(a); if (s && s !== 'C' && s !== 'H') sc += 3; }
     if (sc > coreScore){ coreScore = sc; coreRing = r; }
   }
-  if (globalThis.__PRP_DBG) console.log('[prp] core ring', coreRing, 'score', coreScore);
+  if (globalThis.__PRP_DBG) console.log('[prp] core ring', coreRing, 'score', coreScore,
+    '| systems', infos.map(d => ({ ipso: d.ipso, piv: d.piv, ring: d.ring && d.ring.size })));
   const ringAtomsAll = new Set();
   for (const r of allRings) for (const a of r) ringAtomsAll.add(a);
   const shapeOf = q => {
@@ -1613,6 +1644,27 @@ function _prpFixLabelGap(blk){
       if (d > ring) ring = d;
     }
     return [core <= 0.02 ? 0 : (core <= 0.10 ? 1 : (core <= 0.30 ? 2 : 3)), +ring.toFixed(2)];
+  };
+  /* 轴向端正度: 悬挂环系的挂键越贴近水平/垂直轴越"端正"(用户手绘参照即竖直向上)。
+   * 拥挤时先选轴向误差小的坐标, 再考虑拉长键, 最后才是总分。 */
+  const axisOf = q => {
+    let total = 0, n = 0;
+    for (const d of infos){
+      if (!d.ring || d.ring.size < 5) continue;
+      const others = adj[d.piv].filter(a => a !== d.ipso);
+      if (others.length !== 2) continue;
+      const u1 = [q[others[0]][0]-q[d.piv][0], q[others[0]][1]-q[d.piv][1]];
+      const u2 = [q[others[1]][0]-q[d.piv][0], q[others[1]][1]-q[d.piv][1]];
+      const l1 = Math.hypot(u1[0],u1[1]), l2 = Math.hypot(u2[0],u2[1]);
+      if (!(l1 > 1e-6 && l2 > 1e-6)) continue;
+      const ix = -(u1[0]/l1+u2[0]/l2), iy = -(u1[1]/l1+u2[1]/l2), il = Math.hypot(ix,iy);
+      const vx = q[d.ipso][0]-q[d.piv][0], vy = q[d.ipso][1]-q[d.piv][1], vl = Math.hypot(vx,vy);
+      if (!(il > 1e-6 && vl > 1e-6)) continue;
+      let cs = (ix*vx+iy*vy)/(il*vl);
+      cs = Math.max(-1, Math.min(1, cs));
+      total += Math.acos(cs) * 180 / Math.PI; n++;
+    }
+    return +(total / (n || 1)).toFixed(1);
   };
   for (let i = 0; i < nA; i++){
     const s = symOf(i);
@@ -1629,7 +1681,8 @@ function _prpFixLabelGap(blk){
      *   2026-11-28 实测不预筛时每张缺陷分子要多花近 1 秒, 会拖慢卡片首屏。 */
     const g = _prpLabelGapInfo(P, q, med, adj, bonds).gap;
     if (dbg && g > dbg.maxGap) dbg.maxGap = +g.toFixed(3);
-    if (g < LABEL_GAP_MIN) continue;
+    const stretchOnly = op.every(o => !o.deg);
+    if (g < (stretchOnly ? 0.55 : LABEL_GAP_MIN)) continue;
     if (dbg) dbg.gap++;
     if (_prpCrossCount(q, bonds) > 0) continue;
     if (dbg) dbg.cross++;
@@ -1646,10 +1699,12 @@ function _prpFixLabelGap(blk){
     if (dbg) dbg.score++;
     const ang = _prpCrowdAng(q, adj, sysList);
     const [coreRank, ringShift] = shapeOf(q);
-    /* 字典序: 主体环是否原位 → 全体环位移 → 总分(已含净空罚) → 支点角 → 净空 → 最长键。
-     * 「主体平正」优先于零点几分的总分差 — 用户 2026-11-28 明确反馈歪斜比分数难看。 */
-    const key = [coreRank, ringShift, sc, ang, -g, ratios.max];
-    const tol = [0, 0.02, 1e-6, 1e-6, 1e-6, 1e-6];
+    const axis = axisOf(q);
+    /* 字典序(2026-11-28 用户定则): 主体环原位 → 挂键轴向端正 → 纯拉长键优先
+     *   → 全体环位移 → 总分 → 支点角 → 净空 → 最长键。
+     * 「先端正、拥挤再拉长键」优先于零点几分的总分差。 */
+    const key = [coreRank, axis, stretchOnly ? 0 : 1, ringShift, sc, ang, -g, ratios.max];
+    const tol = [0, 2, 0, 0.02, 1e-6, 1e-6, 1e-6, 1e-6];
     let take = !bestKey;
     if (!take) for (let k = 0; k < key.length; k++){
       if (key[k] < bestKey[k] - tol[k]){ take = true; break; }
@@ -1657,6 +1712,13 @@ function _prpFixLabelGap(blk){
     }
     if (take){ best = cand; bestKey = key; }
   }
+  globalThis.__PRP_LAST_FIXINFO = {
+    gap: +info.gap.toFixed(3), fixed: !!best,
+    after: best ? +(-bestKey[6]).toFixed(3) : +info.gap.toFixed(3),
+    coreRank: best ? bestKey[0] : null,
+    axis: best ? bestKey[1] : null,
+    stretchOnly: best ? bestKey[2] === 0 : null
+  };
   if (dbg)
     console.log('[prp] label gap', info.gap.toFixed(3), '->', best ? (-bestKey[4]).toFixed(3) : 'NO FIX',
       '| key', best && bestKey, '| 候选', JSON.stringify(dbg));
